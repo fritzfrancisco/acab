@@ -1,13 +1,19 @@
+import numpy as np
+import pandas as pd
+from numba import jit
+
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib import cm
 
 from scipy.interpolate import SmoothSphereBivariateSpline, griddata
 from scipy.ndimage.filters import gaussian_filter
 from scipy.stats import binned_statistic_2d, binned_statistic, gaussian_kde
+from scipy.signal import savgol_filter, correlate
 
 import matplotlib as mpl
 import matplotlib.animation as animation
 
+import random
 import itertools
 
 def calculate_katz(focal_id, reference_id, to_origin=False, origin=[0, 0, 0]):
@@ -186,15 +192,15 @@ def asSpherical(x, y, z):
 
 def rotate(angle):
     '''rotation fuction required for plotting rotating plots'''
-    
+  
     ax.view_init(azim=angle)
 
 
 def create_windows(arr, window_size=10):
     '''Split array into windows according to window_size. 
-    
     Windows on both ends of the array are padded with np.nan to fit window_size.
     Window_size musst be even'''
+    
     windows = []
     assert window_size % 2 == 0, "window_size must be even!"
     for i, f in enumerate(arr):
@@ -210,3 +216,58 @@ def create_windows(arr, window_size=10):
             window = arr[i - int(window_size / 2):i + int(window_size / 2)]
         windows = np.append(window, windows).reshape(-1, window_size)
     return windows
+
+def get_speed(focal_id, window=11, smooth=False):
+    '''calculate speed with cartesian x,y,z coordinates'''
+    
+    speed = np.sqrt((np.diff(focal_id['X']))**2 +
+                       (np.diff(focal_id['Y']))**2 +
+                       (np.diff(focal_id['Z']))**2)
+    speed = np.append(speed, speed[-1])
+    if smooth == True:
+        assert window % 2 == 1, 'window length musst be uneven'
+        speed = savgol_filter(speed, window, 3)
+    return speed
+
+
+def cooccurrence_index(focal_id, reference_id):
+    '''retrieve index of frames in which both signals exist'''
+    
+    index = np.intersect1d(focal_id['FRAME_IDX'], reference_id['FRAME_IDX'])
+    focal_index = np.array(
+        [1 if np.isin(f, index) else 0 for f in focal_id['FRAME_IDX']],
+        dtype=bool)
+    ref_index = np.array(
+        [1 if np.isin(f, index) else 0 for f in reference_id['FRAME_IDX']],
+        dtype=bool)
+    return focal_index, ref_index
+
+@jit(nopython=True, parallel=True)
+def correlate_windows(arr1, arr2, tau=50):
+    '''small scale correlation of two signals based on a sliding window tau.'''
+    
+    values = np.zeros(len(arr1))
+    lags = np.zeros(len(arr1))
+    leads = np.zeros(len(arr1))
+    windows = np.zeros((len(arr1),tau*2))
+    lag_arr = np.linspace(-0.5 * len(arr1) / tau, 0.5 * len(arr1) / tau,
+                            len(arr1))
+    lead_arr = np.linspace(-0.5 * len(arr1) / tau, 0.5 * len(arr1) / tau,
+                            len(arr1))
+    i_count = 0
+    for u in arr1:
+        window = np.zeros(len(np.arange(i_count - tau, i_count + tau)))
+        j_count = 0
+        for v in arr2[i_count - tau:i_count + tau]:
+            window[j_count] = np.dot(u, v)
+            j_count += 1
+        windows[i_count] = window
+        values[i_count] = np.argmax(window)
+        delay = lag_arr[np.argmax(window)]
+        lead = lead_arr[np.argmin(window)]
+        lags[i_count] = delay
+        leads[i_count] = lead
+        
+        i_count += 1
+        
+    return windows, values, lags, leads
