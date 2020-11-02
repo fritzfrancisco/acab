@@ -2,6 +2,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from functools import partial
 from pathlib import Path
+from skimage import measure
+import pdb
 
 def var_norm_vecTS(x):
     '''
@@ -154,3 +156,157 @@ def bootstrapp_corr(x, y, quantile, sam):
     lower = np.sort(res)[int(samples * quantile)]
     upper = np.sort(res)[samples - int(samples * quantile)]
     return [lower, upper]
+
+
+######################################################################################################
+# blobs
+######################################################################################################
+# measure.label doesnt work with a huge amount of blobs
+# so we use this helper functions
+# also checkable in (Blob_SplitAndMerge.ipynb
+
+def JoinLabels(lab0, lab1):
+    '''
+    joins labels of adjacent labeled parts via an overlapping
+    section in the first dimension (usually time)
+    TODO: probably better way of implementing it
+        instead of while loop
+    "Problem":
+        some labels are skipped, if a label of lab0 is renamed a label-skip appears
+        That is not an error but some integers do not have a label
+        e.g. np.unique(result) = [0,1,3,4] # integer 2 is missing BUT NO Labeled blob is missing
+    '''
+    newLabelIds1 = list(np.unique(lab1[0]))
+    constAdd = max([lab1.max(), lab0.max()]) + 1
+    for Id in newLabelIds1:
+        there = np.where(lab1[0] == Id)
+        oldId = 1 * lab0[-1, there[0][0], there[1][0]]
+        lab1[lab1 == Id] = oldId + constAdd
+    # check the other way around:
+    renamed_oldId = []
+    renamed_newId = []
+    diff = lab0[-1] - (lab1[0] - constAdd) # should be everywhere 0 unless missed blob
+    diffs = np.unique(diff)
+    count = 0
+    while len(diffs) > 1:
+        for di in diffs:
+            if di != 0:
+                there = np.where(diff == di)
+                oldId = 1 * lab0[-1, there[0][0], there[1][0]]
+                newId = 1 * lab1[0, there[0][0], there[1][0]]
+                if oldId not in renamed_oldId:
+                    newId -= constAdd
+                    lab0[lab0 == oldId] = newId
+                    renamed_oldId.append(newId)
+                elif newId not in renamed_newId:
+                    lab1[lab1 == newId] = oldId + constAdd
+                    renamed_newId.append(newId)
+                else:
+                    # rename in lab0: old to new-const AND in lab1: old +const to new
+                    lab0[lab0 == oldId] = newId - constAdd
+                    lab1[lab1 == oldId + constAdd] = newId
+        diff = lab0[-1] - (lab1[0] - constAdd) # should be everywhere 0 unless missed blob
+        diffs = np.unique(diff)
+        # print('critical counter ', count, '/ 10')
+        count += 1
+        assert count <= 20, "Too many iterations... probably something wrong. diff: {}, Ids: {}, {}, {}".format(diffs, oldId, newId, constAdd)
+    # change non-overlapping blobs
+    count = 1
+    maxOldId = lab0.max()
+    newLabelIds1 = np.unique(lab1[0])
+    newLabelIdsAll = np.unique(lab1)
+    for Id in newLabelIdsAll:
+        if Id not in newLabelIds1:
+            lab1[lab1 == Id] = maxOldId + count + constAdd
+            count += 1
+    lab1[lab1 == 0] = constAdd
+    lab1 -= constAdd
+    result = np.concatenate((lab0, lab1[1:]), axis=0)
+    # now ensure that no label is skipped:
+    return result
+
+
+def JoinLabelsNOTWORKING(lab0, lab1):
+    '''
+    See JoinLabels: tried to write it more simple.... not working....
+    '''
+    Overlap0, Overlap1 = 1*lab0[-1], 1*lab0[0]
+    overIds0 = np.unique(Overlap0)
+    allAssigned1 = np.empty(0)
+    constAdd = max([np.max(lab0), np.max(lab1)]) + 1
+    Ids1To0 = dict()
+    Ids0Merges = dict() # key =
+    for Id0 in overIds0:
+        there = np.where(Overlap0 == Id0)
+        assignedIds1 = np.unique(Overlap1[there])
+        alreadyAsigned = np.in1d(assignedIds1, allAssigned1)
+        if np.any(alreadyAsigned): # already assigned -> change also lab0-ids 
+            alreadyAssignedIds = assignedIds1[alreadyAsigned]
+            Id0NeedsMerge = np.unique([Ids1To0[i1] for i1 in alreadyAssignedIds])
+            Id0 = Id0NeedsMerge[0]
+            if len(Id0NeedsMerge) > 1:
+                for id2merge in Id0NeedsMerge[1:]:
+                    Ids0Merges[id2merge] = Id0
+        for Id1 in assignedIds1:
+            Ids1To0[Id1] = Id0
+        allAssigned1 = np.append(allAssigned1, assignedIds1)
+        # for Id1 in assignedIds1: # ATTENTION
+        #     Ids1To0[Id1] = Id0
+        #     lab1[lab1 == Id1] = Id0 + constAdd
+    # now assign new labels to blobs outside of overlap
+    AllIds1 = np.unique(lab1)
+    remainingIds = np.setdiff1d(AllIds1, allAssigned1)
+    maxId0 = np.max(lab0)
+    for i, Id1 in enumerate(remainingIds):
+        lab1[lab1 == Id1] = maxId0 + i + constAdd + 1
+    # change assigned id1-labels from the overlap
+    for Id1 in Ids1To0.keys():
+        lab1[lab1 == Id1] = Ids1To0[Id1] + constAdd
+    # merge id0-labels from the overlap
+    for Id0 in Ids0Merges.keys():
+        lab0[lab0 == Id0] = Ids0Merges[Id0]
+    lab1 -= constAdd
+    # ensure that everything works
+    diff = (lab0[-1] - lab1[0]).flatten() # should be everywhere 0 unless missed blob
+    assert len(np.unique(diff)) == 1 and diff[0] == 0, 'non-zero entires in diff[0]: {}, np.unique(diff) {}'.format(diff[0], np.unique(diff))
+    # join the datasets
+    result = np.concatenate((lab0, lab1[1:]), axis=0)
+    return result
+
+
+def labelSplitAndMerge(data, split=None, background=None):
+    '''
+    Does EXACTLY the same as skimage.measure.label but for much larger data
+        If data is too large the skimage.measure.label throws segmentation fault
+        This fctn. splits the data in smaller parts runs skimage.measure.label
+        on them and merges them together
+    ATTENTION chose Split as large as possible, because with each new chunk it merges it the whole past chunks with the new chunk (-> more time needed)
+    INPUT:
+        data len(shape)=[time, Nx, Ny]
+            numpy array with first dimension as time the other 2 are
+            space dimensions
+    '''
+    if split is None:
+        split = 100
+    time, *_ = data.shape
+    borders = np.arange(split, time, step=split)
+    # initialize
+    dat = data[:borders[0]+1]
+    partLabel = partial(measure.label, background=background)
+    labelAll = partLabel(dat)
+    # merge all but last
+    allborders = len(borders)
+    for i in range(1, allborders):
+        print('time to merge with border ', i, ' / ', allborders, end='\r')
+        dat = data[borders[i-1]:borders[i]+1]
+        label = partLabel(dat)
+        labelAll = JoinLabels(labelAll, label)
+    # merge last:
+    if borders[-1]+1 != time:
+        print('last merge')
+        dat = data[borders[-1]:]
+        label = partLabel(dat)
+        labelAll = JoinLabels(labelAll, label)
+    return labelAll
+
+
