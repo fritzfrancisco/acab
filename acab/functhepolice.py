@@ -1923,3 +1923,62 @@ def get_instances(file,
         outfile = str(output_dir + outfile)
         np.save(outfile, instances)
     return instances
+
+def collect_trex(directory,identities=[0,1,2,3]):
+    '''combine trex.run output for a given directory and number of individuals'''
+    area_inner_tank = 423112 ## measure at bottom
+    r = np.sqrt(area_inner_tank/np.pi)
+    px2cm = r/30
+    trex2px = 2046/30
+    threshold = 13.7
+    center = np.array([15,15])
+    data_stacks = []
+    canvas = np.zeros((int(2040*(2040/2046)),2046,3), np.uint8)
+
+    for identity in np.array(identities):
+        data_stack = []
+        file_list = sorted(glob.glob(str(directory + '/data/*fish'+str(identity)+'.npz')))
+        for j,file in enumerate(file_list):
+            data = np.load(file,allow_pickle=True)
+            x = data['X']
+            y = data['Y']
+            distance = np.sqrt(np.power(x - center[0],2)+np.power(y-center[1],2))
+
+            index = np.where((y!=np.inf) & (x!=np.inf) & (distance <= threshold))[0]
+
+            x = (x[index] - center[0])
+            y = (y[index] - center[1])
+            
+            if j == 0:
+                time = data['frame']
+            else:
+                time = data['frame']+max(frame_idx)
+                
+            frame_idx = time.astype(np.int32)        
+            time = time[index]/50  
+
+            out = np.array([time,x,y]).T
+            data_stack = np.append(data_stack, out)
+        data_stack = data_stack.reshape(-1, out.shape[1])
+        
+        data_stacks.append(data_stack)
+        del data_stack, out
+        
+    out = {}
+    for i in np.array(identities):
+        out['TIME%s'%i] = data_stacks[i][:,0]
+        out['X%s'%i] = data_stacks[i][:,1]
+        out['Y%s'%i] = data_stacks[i][:,2]
+
+    df = pd.DataFrame(dict([ (k,pd.Series(v)) for k,v in out.items() ]))  
+    del out
+    
+    cv2.circle(canvas,(int(canvas.shape[0]/2),int(canvas.shape[1]/2)),int(13.7*trex2px),(255,255,255),-1,cv2.LINE_AA)
+    
+    for i in np.array(identities):
+        for j, p in enumerate(df[str('X%s'%i)]):
+            if np.isnan(p):
+                continue
+            else:
+                canvas = cv2.circle(canvas, (int((df[str('X%s'%i)][j]+center[0])*trex2px),int((df[str('Y%s'%i)][j]+center[1])*trex2px)),int(5), colors[i]*255, -1, cv2.LINE_AA)
+    return df, canvas
