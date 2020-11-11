@@ -49,9 +49,10 @@ def abc_plotLabels(coord, axs, fontsize=None, Nskip=None, abc=None, **kwgs):
         ax.text(coords[0], coords[1], abc[i], fontsize=fontsize, **kwgs)
 
 
-def pcolor_bwr_zerowhite(f, axs, mat, xvals=None, yvals=None, cLabel=None,
-                         cbar=None, Nticks=None, maxVal=None,
-                         cbarHorizontal=None, **kwgs):
+def pcolor_zerowhite(f, axs, mat, xvals=None, yvals=None,
+                     cmap=None, cLabel=None,
+                     cbar=None, Nticks=None, maxVal=None,
+                     cbarHorizontal=None, **kwgs):
     '''
     creates a pcolormesh plot with bwr-colormap
     where white is exaclty at zero
@@ -60,25 +61,31 @@ def pcolor_bwr_zerowhite(f, axs, mat, xvals=None, yvals=None, cLabel=None,
     INPUT:
         maxVal double
             value at which the results are cut (better name: cutValue)
+        cmap matplotlib.cm object
+            colormap in use, default is cm.bwr but any other diverging colormap is fine
+            e.g. 'PiYG', 'PRGn', 'BrBG', 'PuOr', 'RdGy', 'RdBu',
+                 'RdYlBu', 'RdYlGn', 'Spectral', 'coolwarm', 'seismic'
         kwgs dict
             keywords for colorbar creation
+
     '''
     # DEFAULTS
     cbarHorizontal = jut.setDefault(cbarHorizontal, False)
     cbar = jut.setDefault(cbar, True)
+    cmap = jut.setDefault(cmap, cm.bwr)
     Nticks = jut.setDefault(Nticks, 4)
     mini = np.nanmin(mat)
     maxi = np.nanmax(mat)
     maxse = np.max([np.abs(mini), maxi])
     maxVal = jut.setDefault(maxVal, maxse)
-    if mini*maxi < 0: 
-        c = axs.pcolormesh(mat, cmap=cm.bwr, vmin=-maxVal, vmax=maxVal)
+    if mini*maxi < 0:
+        c = axs.pcolormesh(mat, cmap=cmap, vmin=-maxVal, vmax=maxVal)
     elif mini >= 0:
-        cmap = truncate_colormap(cm.bwr, minval=0.5, maxval=1.0, n=500)
+        cmap = truncate_colormap(cmap, minval=0.5, maxval=1.0, n=500)
         c = axs.pcolormesh(mat, cmap=cmap, vmin=mini, vmax=maxVal)
         # c = axs.pcolormesh(mat, cmap=cm.Reds) # old version
     elif maxi <= 0:
-        cmap = truncate_colormap(cm.bwr, minval=0, maxval=0.5, n=500)
+        cmap = truncate_colormap(cmap, minval=0, maxval=0.5, n=500)
         c = axs.pcolormesh(mat, cmap=cmap, vmin=-maxVal, vmax=maxi)
         # c = axs.pcolormesh(mat, cmap=cm.Blues_r) # old version
     else:
