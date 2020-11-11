@@ -1926,7 +1926,8 @@ def get_instances(file,
 
 def collect_trex(directory,identities=[0,1,2,3]):
     '''combine trex.run output for a given directory and number of individuals'''
-    area_inner_tank = 423112 ## measure at bottom
+    
+    area_inner_tank = 423112 ## px measured at bottom of tank
     r = np.sqrt(area_inner_tank/np.pi)
     px2cm = r/30
     trex2px = 2046/30
