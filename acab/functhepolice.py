@@ -1983,3 +1983,105 @@ def collect_trex(directory,identities=[0,1,2,3]):
             else:
                 canvas = cv2.circle(canvas, (int((df[str('X%s'%i)][j]+center[0])*trex2px),int((df[str('Y%s'%i)][j]+center[1])*trex2px)),int(5), colors[i]*255, -1, cv2.LINE_AA)
     return df, canvas
+
+
+def full_sig_xlags(tracks, asarray=True, exclude_ids=[]):
+    '''calculate mean correlation based leader-follower value from the entire signal'''
+    
+    pairs = itertools.permutations(tracks['IDENTITIES'], 2)
+    pairs = np.array(list(pairs))
+    fps = 20
+    lags = {}
+    for i in np.delete(tracks['IDENTITIES'],np.array(exclude_ids, dtype=np.int)):
+        lags[str(i)] = 0
+
+    for pair in pairs:
+        if str(pair[0]) not in lags or str(pair[1]) not in lags:
+            continue
+        index = cooccurrence_index(tracks[str(pair[0])],tracks[str(pair[1])])
+        xsig = calc_xcorr(tracks[str(pair[0])]['SPEED'][index[0]],tracks[str(pair[1])]['SPEED'][index[1]])
+        lags[str(pair[0])] += xsig[0][np.argmax(xsig[1])]/fps
+
+    for i in lags:
+        lags[str(i)] = np.round(lags[str(i)]/int(len(lags.keys())-1),2)
+        
+    if asarray == True:
+        lags = np.array([lags[str(i)] for i in lags.keys()])
+    return lags
+
+def calc_distance_stack(tracks):
+    '''calculate distance stack, as stack of matrices.
+    The resulting stacks shape[0] is length of FRAME_IDX 
+    and shape[1] and shape[2] are N individuals '''
+    
+    frame_idx = tracks['FRAME_IDX']
+    pts = np.array([np.array([tracks[str(i)]['X'],tracks[str(i)]['Y']]) for i in tracks['IDENTITIES']])
+    pts = np.rot90(pts).T
+
+    # create stack of len(time) with distance matrix for all four individuals:
+    dist_stack = np.zeros((len(frame_idx),4,4))
+
+    for t, frame in enumerate(frame_idx):
+        dist_stack[int(t)] = cdist(pts[t],pts[t])
+    return dist_stack
+
+def calc_pairwise_distances(tracks,asarray=True):
+    '''calculate pairwise distances'''
+    
+    dist_stack = calc_distance_stack(tracks)
+    pairwise_distances = {}
+    for i in tracks['IDENTITIES']:
+        pairwise_distances[str(i)] = {}
+        maximum = np.concatenate(
+            [dist_stack[:, int(i), j] for j in np.arange(dist_stack.shape[2])])
+        maximum[np.isinf(maximum)] = 0
+        maximum[np.isnan(maximum)] = 0
+        maximum = np.max(maximum)
+
+        for n, j in enumerate(
+                np.array(tracks['IDENTITIES'])[np.array(
+                    np.array(tracks['IDENTITIES']) != i)]):
+            sig = dist_stack[:, int(i), int(j)]
+            pairwise_distances[str(i)][str(j)] = np.mean(sig[np.isfinite(sig)] /
+                                                         maximum)
+    if asarray == True:
+        out = []
+        for i in list(pairwise_distances.keys()):
+            for n, j in enumerate(np.array(list(pairwise_distances.keys()))[np.array(np.array(list(pairwise_distances.keys())) != i)]):
+                out = np.append(out,pairwise_distances[str(i)][str(j)])
+        pairwise_distances = out.reshape(len(pairwise_distances.keys()),len(pairwise_distances.keys())-1)
+    return pairwise_distances
+
+def trex2tracks(files, identities = np.arange(4), interpolate=True, start_idx = 1200, end_idx = 72000, threshold = 14):
+    '''create tracks{} dictionary from trex.run (copyright Tristan Walter) output.
+    Function also filter outliers by thresholding distance to center of arena and interpolate x,y'''
+
+    tracks = {'IDENTITIES': identities}
+
+    for i in identities:
+        tracks[str(i)] = {}
+        data = np.load(files[i])
+        index = np.where((data['frame'] >= start_idx) & (data['frame'] < end_idx))[0]
+        distance = np.sqrt(
+            np.power(data['X'][index] - 15, 2) + np.power(data['Y'][index] - 15, 2))
+        if interpolate==True:
+            x_itpd, _ = interpolate_signal(data['X'][index][distance < threshold],
+                                           data['frame'][index][distance < threshold])
+            y_itpd, frame_idx = interpolate_signal(data['Y'][index][distance < threshold],
+                                                   data['frame'][index][distance < threshold])
+
+            tracks[str(i)]['X'] = np.array(x_itpd).astype(float)
+            tracks[str(i)]['Y'] = np.array(y_itpd).astype(float)
+        else:
+            tracks[str(i)]['X'] if "key1" in d:= np.array(data['X'][index][distance < threshold]).astype(float)
+            tracks[str(i)]['Y'] = np.array(data['Y'][index][distance < threshold]).astype(float)
+            
+        tracks[str(i)]['SPEED'] = get_speed(tracks[str(i)])
+        tracks[str(i)]['FRAME_IDX'] = np.array(frame_idx).astype(float)
+    tracks = get_direction(tracks)
+
+    frame_idx = np.unique([np.load(files[i])['frame'] for i in identities])
+    index = np.where((frame_idx >= start_idx) & (frame_idx < end_idx))[0]
+    frame_idx = np.arange(np.min(frame_idx[index]),np.max(frame_idx[index]))
+    tracks['FRAME_IDX'] = frame_idx.astype(np.int32)
+    return tracks
