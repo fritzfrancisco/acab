@@ -7,6 +7,7 @@ import sys
 import random
 import cv2
 import _pickle
+import h5py
 import numpy as np
 import pandas as pd
 
