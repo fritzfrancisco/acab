@@ -2073,7 +2073,7 @@ def trex2tracks(files, identities = np.arange(4), interpolate=True, start_idx = 
             tracks[str(i)]['X'] = np.array(x_itpd).astype(float)
             tracks[str(i)]['Y'] = np.array(y_itpd).astype(float)
         else:
-            tracks[str(i)]['X'] if "key1" in d:= np.array(data['X'][index][distance < threshold]).astype(float)
+            tracks[str(i)]['X'] = np.array(data['X'][index][distance < threshold]).astype(float)
             tracks[str(i)]['Y'] = np.array(data['Y'][index][distance < threshold]).astype(float)
             
         tracks[str(i)]['SPEED'] = get_speed(tracks[str(i)])
