@@ -2105,15 +2105,12 @@ def group_speed(tracks, smoothing_window = 501, fps = 20, px2m = 0.0557510298732
     
     x = []
     y = []
-    d = []
 
     for i in tracks['IDENTITIES']:
         x.append(tracks[str(i)]['X'])
         y.append(tracks[str(i)]['Y'])
-        d.append(tracks[str(i)]['ANGLE'])
     x = np.mean(np.array(x).T,axis=1)
     y = np.mean(np.array(y).T,axis=1)
-    d = np.sum(np.array(d).T,axis=1)
     speed = np.sqrt(np.power(np.diff(x),2)+np.power(np.diff(y),2))*px2m*int(fps)
     speed = np.append(speed,speed[-1])
     speed = savgol_filter(speed,smoothing_window,3)
