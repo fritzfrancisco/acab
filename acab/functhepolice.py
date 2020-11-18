@@ -2086,3 +2086,35 @@ def trex2tracks(files, identities = np.arange(4), interpolate=True, start_idx = 
     frame_idx = np.arange(np.min(frame_idx[index]),np.max(frame_idx[index]))
     tracks['FRAME_IDX'] = frame_idx.astype(np.int32)
     return tracks
+
+def group_polarization(tracks, smoothing_window = 501):
+    '''calculate polarization of group as sum of unit direction vectors for each individual'''
+    
+    d = []
+    for i in tracks['IDENTITIES']:
+        d.append(tracks[str(i)]['ANGLE'])
+    d = np.array(d)
+    x = np.sum(np.cos(d),axis=0)/len(tracks['IDENTITIES'])
+    y = np.sum(np.sin(d),axis=0)/len(tracks['IDENTITIES'])
+    polarization = np.sqrt(np.power(x,2) + np.power(y,2))
+    return polarization
+
+def group_speed(tracks, smoothing_window = 501, fps = 20, px2m = 0.055751029873265766):
+    '''calculate group speed as speed of group centroid.
+    px2m depends highly on tracking output.'''
+    
+    x = []
+    y = []
+    d = []
+
+    for i in tracks['IDENTITIES']:
+        x.append(tracks[str(i)]['X'])
+        y.append(tracks[str(i)]['Y'])
+        d.append(tracks[str(i)]['ANGLE'])
+    x = np.mean(np.array(x).T,axis=1)
+    y = np.mean(np.array(y).T,axis=1)
+    d = np.sum(np.array(d).T,axis=1)
+    speed = np.sqrt(np.power(np.diff(x),2)+np.power(np.diff(y),2))*px2m*int(fps)
+    speed = np.append(speed,speed[-1])
+    speed = savgol_filter(speed,smoothing_window,3)
+    return speed 
