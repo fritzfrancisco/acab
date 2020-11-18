@@ -2097,6 +2097,8 @@ def group_polarization(tracks, smoothing_window = 501):
     x = np.sum(np.cos(d),axis=0)/len(tracks['IDENTITIES'])
     y = np.sum(np.sin(d),axis=0)/len(tracks['IDENTITIES'])
     polarization = np.sqrt(np.power(x,2) + np.power(y,2))
+    if smoothing_window != 0:
+        polarization = savgol_filter(polarization, int(smoothing_window), 3)
     return polarization
 
 def group_speed(tracks, smoothing_window = 501, fps = 20, px2m = 0.055751029873265766):
