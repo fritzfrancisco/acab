@@ -2054,11 +2054,11 @@ def calc_pairwise_distances(tracks,asarray=True):
     return pairwise_distances
 
 def trex2tracks(files, identities = np.arange(4), interpolate=True, start_idx = 1200, end_idx = 72000, threshold = 14):
-    '''create tracks{} dictionary from trex.run (copyright Tristan Walter) output.
+    '''create tracks{} dictionary from trex.run output.
     Function also filter outliers by thresholding distance to center of arena and interpolate x,y'''
 
     tracks = {'IDENTITIES': identities}
-
+    
     for i in identities:
         tracks[str(i)] = {}
         data = np.load(files[i])
@@ -2080,13 +2080,41 @@ def trex2tracks(files, identities = np.arange(4), interpolate=True, start_idx = 
         tracks[str(i)]['SPEED'] = get_speed(tracks[str(i)])
         tracks[str(i)]['FRAME_IDX'] = np.array(frame_idx).astype(float)
     tracks = get_direction(tracks)
-
-    frame_idx = np.unique([np.load(files[i])['frame'] for i in identities])
+    del data
+    
+    frame_idx = np.unique(np.concatenate([np.load(files[i])['frame'] for i in identities]))
     index = np.where((frame_idx >= start_idx) & (frame_idx < end_idx))[0]
     frame_idx = np.arange(np.min(frame_idx[index]),np.max(frame_idx[index]))
     tracks['FRAME_IDX'] = frame_idx.astype(np.int32)
-    return tracks
+    ret = np.array([[tracks[str(i)]['X'],tracks[str(i)]['Y']] for i in tracks['IDENTITIES']])
+    try:
+        assert len(ret.shape) == 3
+        ret = True
+        return ret, tracks
 
+    except AssertionError as e:
+#         print("No tracking data retrieved: \n", os.path.dirname(files[0]))
+        ret = False
+        return ret, tracks
+    
+def check_corruption(files):
+    '''check trex.run output files (.npz) for corruptions'''
+    
+    corrupted = []
+    for file in files:
+        try:
+            data = np.load(file, allow_pickle=True)
+            corrupted = np.append(corrupted, False)
+        except:
+            corrupted = np.append(corrupted, True)
+            continue
+    del data
+    
+    index = np.array(corrupted==False)
+    uncorrupted_files = np.array(files)[np.array(index)]
+    del corrupted
+    return uncorrupted_files
+    
 def group_polarization(tracks, smoothing_window = 501):
     '''calculate polarization of group as sum of unit direction vectors for each individual'''
     
