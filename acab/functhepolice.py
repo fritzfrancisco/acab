@@ -2197,3 +2197,14 @@ def get_activity(file,
         outfile = str(output_dir + outfile)
         np.save(outfile, activity)
     return activity
+
+def create_uuids(arr):
+    '''create universally unique identifiers for each unique value of arr'''
+    
+    uniques = np.unique(np.array([p for p in arr]),axis=0)
+    uuids = []
+
+    while len(np.unique(uuids)) != len(uniques):
+        uuids = np.array([str(uuid.uuid4().hex) for i in uniques])
+    return uuids
+    
