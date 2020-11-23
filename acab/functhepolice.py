@@ -1470,7 +1470,8 @@ def track2h5(
 
     filename = os.path.splitext(os.path.basename(input_file))[0]
 
-    output_file = h5py.File(output_filepath, 'a')
+    if save == True:
+        output_file = h5py.File(output_filepath, 'a')
 
     msec_start = 30000  ## Discard first 30 seconds
     max_frame = 13000  ## crop analysis to 13000 frames for all videos
@@ -1553,7 +1554,7 @@ def track2h5(
                 for cnt in filtered_countours:
                     (x, y, w, h) = cv2.boundingRect(cnt)
                     fish_x = float(x + w / 2) / float(gray.shape[1])
-                    fish_y = float(y + h / 2) / float(gray.shape[0])
+                    fish_y = float(y + h / 2) / float(gray.shape[0])                    
                     current.append([fish_x, fish_y, np.nan])
 
                 if np.array(
@@ -1580,7 +1581,7 @@ def track2h5(
                                     element[0], element[1], element[2], count
                                 ])
                                 ## hard coded to specific file ending!
-                                idx = get_identity(element[0] * frame.shape[0], division_point)
+                                idx = get_identity(element[0], division_point)
                                 identity = input_file[int(-9 + (
                                     3 * idx)):int(-7 + (3 * idx))]
                                 data = np.array([
@@ -1594,31 +1595,33 @@ def track2h5(
                                     float(cylinders[idx][1]),
                                     float(cylinders[idx][2])
                                 ])
-                                if np.isin(str(filename),
-                                           list(output_file.keys())).all(
-                                           ) == False:
-                                    print(' \ncreated dataset', str(filename),
-                                          list(output_file.keys()))
-                                    print('\ncylinder:', cylinders[idx])
-                                    output_file.require_dataset(
-                                        str(filename),
-                                        data=data,
-                                        shape=(1, 9),
-                                        dtype='f',
-                                        maxshape=(
-                                            None,
-                                            None,
-                                        ),
-                                        chunks=(5000, 9),
-                                        compression="gzip",
-                                        compression_opts=9)
-                                else:
-                                    output_file[str(filename)].resize(
-                                        (output_file[str(filename)].shape[0] +
-                                         data.shape[0]),
-                                        axis=0)
-                                    output_file[str(
-                                        filename)][-data.shape[0]:] = data
+                                                                
+                                if save == True:
+                                    if np.isin(str(filename),
+                                               list(output_file.keys())).all(
+                                               ) == False:
+                                        print(' \ncreated dataset', str(filename),
+                                              list(output_file.keys()))
+                                        print('\ncylinder:', cylinders[idx])
+                                        output_file.require_dataset(
+                                            str(filename),
+                                            data=data,
+                                            shape=(1, 9),
+                                            dtype='f',
+                                            maxshape=(
+                                                None,
+                                                None,
+                                            ),
+                                            chunks=(5000, 9),
+                                            compression="gzip",
+                                            compression_opts=9)
+                                    else:
+                                        output_file[str(filename)].resize(
+                                            (output_file[str(filename)].shape[0] +
+                                             data.shape[0]),
+                                            axis=0)
+                                        output_file[str(
+                                            filename)][-data.shape[0]:] = data
 
                             else:
                                 reassigned = 0
@@ -1645,6 +1648,7 @@ def track2h5(
                         identity = input_file[int(-9 +
                                                   (3 * idx)):int(-7 +
                                                                  (3 * idx))]
+                        
                         data = np.array([
                             float(count),
                             float(element[0] * frame.shape[1]),
@@ -1656,28 +1660,29 @@ def track2h5(
                             float(cylinders[idx][1]),
                             float(cylinders[idx][2])
                         ])
-                        if np.isin(str(filename),
-                                   list(output_file.keys())).all() == False:
-                            print(' \ncreated dataset', str(filename),
-                                  list(output_file.keys()))
-                            print('\ncylinder:', cylinders[idx])
-                            output_file.require_dataset(str(filename),
-                                                        data=data,
-                                                        shape=(1, 9),
-                                                        dtype='f',
-                                                        maxshape=(
-                                                            None,
-                                                            None,
-                                                        ),
-                                                        chunks=(5000, 9),
-                                                        compression="gzip",
-                                                        compression_opts=9)
-                        else:
-                            output_file[str(filename)].resize(
-                                (output_file[str(filename)].shape[0] +
-                                 data.shape[0]),
-                                axis=0)
-                            output_file[str(filename)][-data.shape[0]:] = data
+                        if save == True:
+                            if np.isin(str(filename),
+                                       list(output_file.keys())).all() == False and save == True:
+                                print(' \ncreated dataset', str(filename),
+                                      list(output_file.keys()))
+                                print('\ncylinder:', cylinders[idx])
+                                output_file.require_dataset(str(filename),
+                                                            data=data,
+                                                            shape=(1, 9),
+                                                            dtype='f',
+                                                            maxshape=(
+                                                                None,
+                                                                None,
+                                                            ),
+                                                            chunks=(5000, 9),
+                                                            compression="gzip",
+                                                            compression_opts=9)
+                            else:
+                                output_file[str(filename)].resize(
+                                    (output_file[str(filename)].shape[0] +
+                                     data.shape[0]),
+                                    axis=0)
+                                output_file[str(filename)][-data.shape[0]:] = data
                         if plot == True:
                             gray = cv2.circle(
                                 cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR),
@@ -1693,7 +1698,7 @@ def track2h5(
                             mem_y = np.append(mem_y, previous_element[1])
                             mem_i = np.append(mem_i, previous_element[2])
                             mem_frame = np.append(mem_frame, count)
-
+                            
                 pre = current
 
                 if plot == True:
@@ -1707,28 +1712,30 @@ def track2h5(
                 print(np.round(np.round(count / length, 2) * 100, 1),
                       '%',
                       flush=True)
-                output_file.close()
+                if save == True:
+                    output_file.close()
                 cap.release()
                 print('Reached end of video file.')
                 break
 
             last = this
             point = point[-11:]
-
             count += 1
-
-        output_file.close()
+            
+        if save == True:
+            output_file.close()
         cap.release()
         if plot == True:
             cv2.destroyAllWindows()
         print('Exited normally.')
 
     except Exception as e:
-        output_file.close()
+        if save == True:
+            output_file.close()
         print(e)
-    output_file.close()
+    if save == True:
+        output_file.close()
     
-
 
 def tracks2h5(file_chunk):
     '''track videos in file_chunk using track2h5()'''
