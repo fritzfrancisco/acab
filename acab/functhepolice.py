@@ -2199,12 +2199,15 @@ def get_activity(file,
     return activity
 
 def create_uuids(arr):
-    '''create universally unique identifiers for each unique value of arr'''
+    '''create universally unique identifiers for each unique value of arr.
+    Function returns masked array or len(arr) containing all UUIDs'''
     
-    uniques = np.unique(np.array([p for p in arr]),axis=0)
+    uniques, idx = np.unique(np.array([p for p in arr]), axis=0, return_index=True)
     uuids = []
 
     while len(np.unique(uuids)) != len(uniques):
         uuids = np.array([str(uuid.uuid4().hex) for i in uniques])
-    return uuids
     
+    uuids = np.concatenate([uuids[np.where(uniques==u)[0]] for u in arr])
+    
+    return uuids
