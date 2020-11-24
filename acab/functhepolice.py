@@ -5,6 +5,7 @@ import itertools
 import os
 import sys
 import random
+import uuid
 import cv2
 import _pickle
 import h5py
