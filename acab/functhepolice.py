@@ -2203,7 +2203,7 @@ def get_activity(file,
 def create_uuids(arr):
     '''create universally unique identifiers for each unique value of arr.
     Function returns masked array or len(arr) containing all UUIDs'''
-    
+
     x = np.array([p for p in arr])
     uniques, idx = np.unique(x, axis=0, return_index=True)
     uuids = []
@@ -2211,10 +2211,12 @@ def create_uuids(arr):
     while len(np.unique(uuids)) != len(uniques):
         uuids = np.array([str(uuid.uuid4().hex) for i in uniques])
     
-    uuids = np.concatenate([uuids[np.where(uniques==u)[0]] for u in x])
-    
+    if len(np.array(x).shape)>1: 
+        uuids = np.concatenate([uuids[np.where(np.mean(np.array([uniques==u])[0],axis=1)==1)[0]] for u in x])    
+    else:
+        uuids = np.concatenate([uuids[np.where(uniques==u)[0]] for u in x])    
+        
     return uuids
-
 
 def interpolate_signal(arr1, arr2):
     '''linear interpolation of arr1 based on arr2'''
