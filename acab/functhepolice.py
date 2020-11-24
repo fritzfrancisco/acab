@@ -2224,3 +2224,28 @@ def interpolate_signal(arr1, arr2):
     new_arr1 = interp_key(frame_idx)
     new_arr2 = np.unique(frame_idx).astype(np.int)
     return new_arr1, new_arr2
+
+def generate_colors(n): 
+    '''generate color array containing n colors in rgb and hex'''
+    
+    rgb_values = [] 
+    hex_values = [] 
+    r = int(random.random() * 256) 
+    g = int(random.random() * 256) 
+    b = int(random.random() * 256) 
+    step = 256 / n 
+    for _ in range(n): 
+        r += step 
+        g += step 
+        b += step 
+        r = int(r) % 256 
+        g = int(g) % 256 
+        b = int(b) % 256 
+        r_hex = hex(r)[2:] 
+        g_hex = hex(g)[2:] 
+        b_hex = hex(b)[2:] 
+        hex_values.append('#' + r_hex + g_hex + b_hex) 
+        rgb_values.append((r/255,g/255,b/255,1)) 
+    rgb_values = np.array(rgb_values)
+    return rgb_values, hex_values 
+
