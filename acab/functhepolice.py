@@ -235,12 +235,17 @@ def create_windows(arr, window_size=10):
         windows = np.append(window, windows).reshape(-1, window_size)
     return windows
 
+
 def get_speed(focal_id, window=11, smooth=False):
     '''calculate speed with cartesian x,y,z coordinates'''
-    
-    speed = np.sqrt((np.diff(focal_id['X']))**2 +
-                       (np.diff(focal_id['Y']))**2 +
-                       (np.diff(focal_id['Z']))**2)
+
+    if 'Z' in focal_id.keys():
+        speed = np.sqrt((np.diff(focal_id['X']))**2 +
+                        (np.diff(focal_id['Y']))**2 +
+                        (np.diff(focal_id['Z']))**2)
+    else:
+        speed = np.sqrt((np.diff(focal_id['X']))**2 +
+                        (np.diff(focal_id['Y']))**2)
     speed = np.append(speed, speed[-1])
     if smooth == True:
         assert window % 2 == 1, 'window length musst be uneven'
@@ -435,17 +440,6 @@ def get_windows(tracks):
             window_list.append(index)
         windows[str(int(window))] = window_list
     tracks['windows'] = windows
-    return tracks
-
-
-def get_speed(tracks):
-    '''Function to calculate speed of individual for each frame from x- and y-coordinates'''
-    
-    tracks['speed'] = np.array([
-        distance(tracks['pos_x'][i], tracks['pos_x'][i + 1],
-                 tracks['pos_y'][i], tracks['pos_y'][i + 1])
-        for i, frame in enumerate(tracks['frame'][:-1])
-    ])
     return tracks
 
 
@@ -2220,3 +2214,13 @@ def create_uuids(arr):
     uuids = np.concatenate([uuids[np.where(uniques==u)[0]] for u in x])
     
     return uuids
+
+
+def interpolate_signal(arr1, arr2):
+    '''linear interpolation of arr1 based on arr2'''
+
+    frame_idx = np.arange(arr2[0], arr2[-1] + 1)
+    interp_key = interp1d(arr2, arr1)
+    new_arr1 = interp_key(frame_idx)
+    new_arr2 = np.unique(frame_idx).astype(np.int)
+    return new_arr1, new_arr2
