@@ -235,8 +235,19 @@ def create_windows(arr, window_size=10):
         windows = np.append(window, windows).reshape(-1, window_size)
     return windows
 
+def get_speed(tracks):
+    '''Function to calculate speed of individual for each frame from x- and y-coordinates.
+    Not to be mistaken for _speed() which returns single individual array.'''
+    
+    tracks['speed'] = np.array([
+        distance(tracks['pos_x'][i], tracks['pos_x'][i + 1],
+                 tracks['pos_y'][i], tracks['pos_y'][i + 1])
+        for i, frame in enumerate(tracks['frame'][:-1])
+    ])
+    return tracks
 
-def get_speed(focal_id, window=11, smooth=False):
+
+def _speed(focal_id, window=11, smooth=False):
     '''calculate speed with cartesian x,y,z coordinates'''
 
     if 'Z' in focal_id.keys():
@@ -2079,7 +2090,7 @@ def trex2tracks(files, identities = np.arange(4), interpolate=True, start_idx = 
             tracks[str(i)]['X'] = np.array(data['X'][index][distance < threshold]).astype(float)
             tracks[str(i)]['Y'] = np.array(data['Y'][index][distance < threshold]).astype(float)
             
-        tracks[str(i)]['SPEED'] = get_speed(tracks[str(i)])
+        tracks[str(i)]['SPEED'] = _speed(tracks[str(i)])
         tracks[str(i)]['FRAME_IDX'] = np.array(frame_idx).astype(float)
     tracks = get_direction(tracks)
     del data
