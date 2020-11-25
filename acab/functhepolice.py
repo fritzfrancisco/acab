@@ -1910,7 +1910,7 @@ def get_instances(file,
             if cr.any() < 0:
                 continue
             else:
-                distances = np.sqrt((x - cx)**2 + (y - (cy+20))**2) ## 20 added due to cropping along frame.shape[0]
+                distances = np.sqrt((x - cx)**2 + (y - (cy))**2)
                 boolean = np.where(distances <= cr)[0]
                 instances[str(int(i))][key] = {
                     'distances': distances,
@@ -1918,7 +1918,7 @@ def get_instances(file,
                 }
             if plot == True:
                 fig, ax = plt.subplots()
-                circle = plt.Circle((int(cx), int(cy)+20), ## 20 added due to cropping along frame.shape[0]
+                circle = plt.Circle((int(cx), int(cy)),
                                     int(cr),
                                     color='r',
                                     alpha=0.8)
