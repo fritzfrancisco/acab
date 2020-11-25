@@ -2328,4 +2328,4 @@ def get_time_to_roi(file,
                 ttroi[str(int(i))][key] = {
                     'time_to_roi': t,
                 }
-    return trroi
+    return ttroi
