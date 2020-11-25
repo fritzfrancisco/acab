@@ -1451,9 +1451,9 @@ def plt_h5(input_file, cmap='plasma'):
 
 def track2h5(
     input_file,
-    save=False,
+    save=True,
     plot=False,
-    output_dir='/home/user/',
+    output_dir='/home/ffrancisco/Desktop/group_data/',
     trial = 0):
     '''Tracking function with incoporated positional memory of previous points.
     Trajectroy snippets are computed, based on this memory and given distinct IDs.
@@ -1464,7 +1464,7 @@ def track2h5(
     Returns
     -------
     object
-        trajectories in .h5 format. 
+        trajectories in .h5 format.
         Column headers: FRAME,X,Y,ID,
         FRAME_WIDTH,FRAME_HEIGHT,CYLINDER_X,
         CYLINDER_Y,CYLINDER_R
@@ -1560,7 +1560,7 @@ def track2h5(
                 for cnt in filtered_countours:
                     (x, y, w, h) = cv2.boundingRect(cnt)
                     fish_x = float(x + w / 2) / float(gray.shape[1])
-                    fish_y = float(y + h / 2) / float(gray.shape[0])                    
+                    fish_y = float(y + h / 2) / float(gray.shape[0])
                     current.append([fish_x, fish_y, np.nan])
 
                 if np.array(
@@ -1592,16 +1592,16 @@ def track2h5(
                                     3 * idx)):int(-7 + (3 * idx))]
                                 data = np.array([
                                     float(count),
-                                    float(element[0] * frame.shape[1]),
-                                    float(element[1] * frame.shape[0]),
+                                    float(element[0] * gray.shape[1]),
+                                    float(element[1] * gray.shape[0]),
                                     float(int(identity)),
-                                    float(frame.shape[0]),
-                                    float(frame.shape[1]),
+                                    float(gray.shape[0]),
+                                    float(gray.shape[1]),
                                     float(cylinders[idx][0]),
                                     float(cylinders[idx][1]),
                                     float(cylinders[idx][2])
                                 ])
-                                                                
+
                                 if save == True:
                                     if np.isin(str(filename),
                                                list(output_file.keys())).all(
@@ -1654,18 +1654,19 @@ def track2h5(
                         identity = input_file[int(-9 +
                                                   (3 * idx)):int(-7 +
                                                                  (3 * idx))]
-                        
+
                         data = np.array([
                             float(count),
-                            float(element[0] * frame.shape[1]),
-                            float(element[1] * frame.shape[0]),
+                            float(element[0] * gray.shape[1]),
+                            float(element[1] * gray.shape[0]),
                             float(int(identity)),
-                            float(frame.shape[0]),
-                            float(frame.shape[1]),
+                            float(gray.shape[0]),
+                            float(gray.shape[1]),
                             float(cylinders[idx][0]),
                             float(cylinders[idx][1]),
                             float(cylinders[idx][2])
                         ])
+
                         if save == True:
                             if np.isin(str(filename),
                                        list(output_file.keys())).all() == False and save == True:
@@ -1689,13 +1690,14 @@ def track2h5(
                                      data.shape[0]),
                                     axis=0)
                                 output_file[str(filename)][-data.shape[0]:] = data
-                        if plot == True:
-                            gray = cv2.circle(
-                                cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR),
-                                (int(data[1]), int(data[2])), 1, (255, 0, 0))
 
                     else:
                         element[2] = max(np.array(point)[:, 2]) + 1
+
+
+                    if plot == True:
+                        gray = cv2.circle(frame[:frame.shape[0] - 20, :],
+                            (int(data[1]), int(data[2])), 1, (0, 255, 0), -1)
 
                     list_id = [x[2] for x in current]
                     for previous_element in pre:
@@ -1704,7 +1706,7 @@ def track2h5(
                             mem_y = np.append(mem_y, previous_element[1])
                             mem_i = np.append(mem_i, previous_element[2])
                             mem_frame = np.append(mem_frame, count)
-                            
+
                 pre = current
 
                 if plot == True:
@@ -1727,12 +1729,15 @@ def track2h5(
             last = this
             point = point[-11:]
             count += 1
-            
+
         if save == True:
             output_file.close()
+
         cap.release()
+
         if plot == True:
             cv2.destroyAllWindows()
+
         print('Exited normally.')
 
     except Exception as e:
@@ -1741,7 +1746,7 @@ def track2h5(
         print(e)
     if save == True:
         output_file.close()
-    
+
 
 def tracks2h5(file_chunk):
     '''track videos in file_chunk using track2h5()'''
