@@ -2161,7 +2161,6 @@ def group_speed(tracks, smoothing_window = 501, fps = 20, px2m = 0.0557510298732
 
 def get_activity(file,
                   save=False,
-                  plot=False,
                   output_dir='/home/ffrancisco/Desktop/data_20200715/'):
     '''Function to retrieve instances where xy coordinates are within a specified range.
     In this case it is specifically designed for .h5 input retrieved through track2h5()
@@ -2279,3 +2278,54 @@ def linreg(X, Y):
         Sxy = Sxy + x*y
     det = Sxx * N - Sx * Sx
     return (Sxy * N - Sy * Sx)/det, (Sxx * Sy - Sx * Sxy)/det
+
+def get_time_to_roi(file,
+                    output_dir='/home/user/'):
+    '''Function to retrieve minimum time by which xy coordinates are within a specified range.
+    In this case it is specifically designed for .h5 input retrieved through track2h5()
+    which contains cylinder coordinates and radii. 
+    These were collected using the find_cylinder() function.'''
+    ttroi = {}
+    f = h5py.File(file, 'r')
+    keys = np.array(list(f.keys()))
+    name = file.replace('.h5', '')
+
+    for key in keys:
+        for i in np.unique(f[key][:, 3]):
+            ttroi[str(int(i))] = {}
+    f.close()
+    identities = np.unique(np.array(list(ttroi.keys())))
+
+    for j, key in enumerate(keys):
+        print(os.path.basename(name), np.round((j / len(keys)) * 100, 1), '%')
+        tracks = dictfromh5(file, j)
+
+         ## make sure trajectories for both IDs exists:
+        if (len(tracks.keys()) != 2) or (np.array([tracks[str(i)]['cylinder_x'] for i in tracks]).any() == -1):
+            continue
+
+        for i in identities:
+
+            id_tracks = tracks[str(int(i))]
+            id_tracks = simple_filter(id_tracks, threshold=4)
+            id_tracks = rmv_out_pts(id_tracks)
+
+            x = id_tracks['pos_x']
+            y = id_tracks['pos_y']
+            cy = id_tracks['cylinder_r']
+            cx = id_tracks['cylinder_x']
+            cr = id_tracks['cylinder_r']
+
+            distances = np.sqrt((x - cx)**2 + (y - (cy))**2) ## 20 added due to cropping along frame.shape[0]
+            boolean = np.where(distances <= cr)[0]  
+            if len(boolean) > 0:
+                t = np.min(boolean)
+            else:
+                t = np.nan
+            if cr.any() < 0:
+                continue
+            else:
+                ttroi[str(int(i))][key] = {
+                    'time_to_roi': t,
+                }
+    return trroi
