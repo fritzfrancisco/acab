@@ -2337,3 +2337,58 @@ def get_time_to_roi(file,
                     'time_to_roi': t,
                 }
     return ttroi
+
+
+def get_visits(file,
+                    distance_threshold_to_roi = 0.08,
+                    output_dir='/home/ffrancisco/Desktop/data_20200715/'):
+    '''Function to retrieve instances where xy coordinates are within a specified range and leave this vicinity again.
+    In this case it is specifically designed for .h5 input retrieved through track2h5()
+    which contains cylinder coordinates and radii. 
+    These were collected using the find_cylinder() function.'''
+    
+    visits = {}
+    f = h5py.File(file, 'r')
+    keys = np.array(list(f.keys()))
+    name = file.replace('.h5', '')
+
+    for key in keys:
+        for i in np.unique(f[key][:, 3]):
+            visits[str(int(i))] = {}
+    f.close()
+    identities = np.unique(np.array(list(visits.keys())))
+
+    for j, key in enumerate(keys):
+        print(os.path.basename(name), np.round((j / len(keys)) * 100, 1), '%')
+        tracks = dictfromh5(file, j)
+
+         ## make sure trajectories for both IDs exists:
+        if (len(tracks.keys()) != 2) or (np.array([tracks[str(i)]['cylinder_x'] for i in tracks]).any() == -1):
+            continue
+
+        for i in identities:
+
+            id_tracks = tracks[str(int(i))]
+            id_tracks = simple_filter(id_tracks, threshold=4)
+            id_tracks = rmv_out_pts(id_tracks)
+
+            x = id_tracks['pos_x']
+            y = id_tracks['pos_y']
+            cy = id_tracks['cylinder_r']
+            cx = id_tracks['cylinder_x']
+            cr = id_tracks['cylinder_r']
+
+            distances = np.sqrt((x - cx)**2 + (y - cy)**2) / px2m
+            boolean = np.where(distances <= distance_threshold_to_roi)[0]  
+            in_out = np.where(np.array([distances[o-1] for o in boolean if (o > np.min(id_tracks['frame'])-1) & (o <= np.max(id_tracks['frame']))])>= distance_threshold_to_roi)[0]
+            if len(in_out) > 0:
+                count = len(in_out)
+            else:
+                count = 0
+            if cr.any() < 0:
+                continue
+            else:
+                visits[str(int(i))][key] = {
+                    'visits': count,
+                }
+    return visits
