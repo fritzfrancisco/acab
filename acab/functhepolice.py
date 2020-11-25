@@ -2284,12 +2284,15 @@ def linreg(X, Y):
     det = Sxx * N - Sx * Sx
     return (Sxy * N - Sy * Sx)/det, (Sxx * Sy - Sx * Sxy)/det
 
+
 def get_time_to_roi(file,
-                    output_dir='/home/user/'):
-    '''Function to retrieve minimum time by which xy coordinates are within a specified range.
+                    distance_threshold_to_roi = 0.08,
+                    output_dir='/home/ffrancisco/Desktop/data_20200715/'):
+    '''Function to retrieve instances where xy coordinates are within a specified range.
     In this case it is specifically designed for .h5 input retrieved through track2h5()
     which contains cylinder coordinates and radii. 
     These were collected using the find_cylinder() function.'''
+    
     ttroi = {}
     f = h5py.File(file, 'r')
     keys = np.array(list(f.keys()))
@@ -2321,12 +2324,12 @@ def get_time_to_roi(file,
             cx = id_tracks['cylinder_x']
             cr = id_tracks['cylinder_r']
 
-            distances = np.sqrt((x - cx)**2 + (y - (cy))**2) ## 20 added due to cropping along frame.shape[0]
-            boolean = np.where(distances <= cr)[0]  
+            distances = np.sqrt((x - cx)**2 + (y - (cy))**2) / px2m
+            boolean = np.where(distances <= distance_threshold_to_roi)[0]  
             if len(boolean) > 0:
                 t = np.min(boolean)
             else:
-                t = np.nan
+                t = np.inf
             if cr.any() < 0:
                 continue
             else:
