@@ -2,15 +2,16 @@
 import gc
 import glob
 import itertools
-import os
-import sys
+import sys, os
 import random
 import uuid
 import cv2
 import _pickle
 import h5py
 import numpy as np
+import numba as nb
 import pandas as pd
+import seaborn as sns
 
 import matplotlib as mpl
 import matplotlib.animation as animation
@@ -20,19 +21,44 @@ from copy import deepcopy
 
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib import cm
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+from matplotlib.lines import Line2D
+from matplotlib.path import Path
 
 from multiprocessing import Pool, get_context
 
 from scipy.interpolate import SmoothSphereBivariateSpline, griddata
 from scipy.ndimage.filters import gaussian_filter
 from scipy.stats import binned_statistic_2d, binned_statistic, gaussian_kde
-from scipy.signal import cwt, morlet, ricker, savgol_filter, correlate
+from scipy.signal import cwt, morlet, ricker, savgol_filter, correlate,  detrend
 from scipy.spatial.distance import cdist, directed_hausdorff, euclidean
 from scipy.cluster.hierarchy import dendrogram, linkage
 from scipy.interpolate import interp1d
+from scipy.spatial import Voronoi, voronoi_plot_2d, ConvexHull, convex_hull_plot_2d
+from scipy.stats import norm, gaussian_kde
 
 from sklearn.cluster import DBSCAN
 from sklearn.ensemble import IsolationForest
+from sklearn.preprocessing import scale
+
+import matplotlib.pylab as plt
+import matplotlib.backends.backend_pdf
+import matplotlib as mpl
+
+
+def kl_divergence(p, q):
+    '''calculate Kullback-Leibler Divergence between two distributions'''
+    
+    return np.nansum([p[i] * np.log2(p[i] / q[i]) for i in np.arange(len(p))])
+
+
+def chunks(lst, n):
+    """Yield successive n-sized chunks from lst."""
+    
+    chunks = []
+    for i in range(0, len(lst), n):
+        yield lst[i:i + n]
+
 
 def calculate_katz(focal_id, reference_id, to_origin=False, origin=[0, 0, 0]):
     '''create spherical heatmap based on occurences of reference to focal signal.
@@ -185,6 +211,21 @@ def spherical_heatmap(theta, phi, bins=10, ax=None):
     return ax
 
 
+@nb.njit(fastmath=True)
+def normalize(vector):
+    mag = 0.
+    for idx in range(vector.shape[0]):
+        mag += vector[idx]**2
+    return np.sqrt(mag)
+
+
+def unit_vector(vector):
+    mag = normalize(vector)
+    if mag != 0:
+        vector = vector / mag
+    return vector
+
+
 def asCartesian(r, theta, phi):
     '''convert spherical coordinates to x,y,z coordinates'''
     r = r
@@ -214,26 +255,39 @@ def rotate(angle):
     ax.view_init(azim=angle)
 
 
+@nb.jit(nopython=True)
 def create_windows(arr, window_size=10):
     '''Split array into windows according to window_size. 
     Windows on both ends of the array are padded with np.nan to fit window_size.
     Window_size musst be even'''
-    
-    windows = []
+    windows = np.zeros((len(arr), window_size))
     assert window_size % 2 == 0, "window_size must be even!"
-    for i, f in enumerate(arr):
+    for i in np.arange(len(arr)):
         if i <= int(window_size / 2):
-            pad = np.repeat(np.nan, int(window_size / 2) - i)
+            pad = np.arange(int(window_size / 2) - i) * np.nan
             window = arr[:i + int(window_size / 2)]
-            window = np.concatenate([pad, window])
+            window = concatenate_nb(pad, window)
+
         elif i >= int(len(arr) - (window_size / 2)):
-            pad = np.repeat(np.nan, i - (len(arr) - (window_size / 2)))
+            pad = np.arange(i - (len(arr) - (window_size / 2))) * np.nan
             window = arr[i - int(window_size / 2):]
-            window = np.concatenate([window, pad])
+            window = concatenate_nb(window, pad)
         else:
             window = arr[i - int(window_size / 2):i + int(window_size / 2)]
-        windows = np.append(window, windows).reshape(-1, window_size)
+        windows[i] = window
+        windows = windows.reshape(-1, window_size)
     return windows
+
+
+@nb.jit(nopython=True)
+def concatenate_nb(str1, str2):
+    '''np.concatenate implemented for numba.jit'''
+    lenstr = len(str1) + len(str2)
+    out = np.empty_like(np.zeros(lenstr))
+    out[:len(str1)] = str1[:len(str1)]
+    out[len(str1):] = str2
+    return out
+
 
 def get_speed(tracks):
     '''Function to calculate speed of individual for each frame from x- and y-coordinates.
@@ -276,6 +330,7 @@ def cooccurrence_index(focal_id, reference_id):
         dtype=bool)
     return focal_index, ref_index
 
+
 @jit(nopython=True, parallel=True)
 def correlate_windows(arr1, arr2, tau=50):
     '''small scale correlation of two signals based on a sliding window tau.'''
@@ -306,6 +361,421 @@ def correlate_windows(arr1, arr2, tau=50):
         
     return windows, values, lags, leads
 
+
+def correlate_inds(data, correlation_window=101):
+    '''correlate individuals within data'''
+    for i in data['IDENTITIES']:
+        data[str(i)]['CORRELATIONS'] = {}
+    pairs = itertools.permutations(data['IDENTITIES'], 2)
+    pool_input = [(data[str(i)], data[(str(n))], i, n, correlation_window)
+                  for i, n in pairs]
+    with multiprocessing.Pool(processes=multiprocessing.cpu_count()) as pool:
+        pool_output = pool.starmap(pairwise_correlations, pool_input)
+        pool.close()
+        pool.join()
+    for i, data_i in pool_output:
+        data[str(i)]['CORRELATIONS'] = {
+            **data[str(i)]['CORRELATIONS'],
+            **data_i['CORRELATIONS']
+        }
+    return data
+
+
+def get_leader_follower(data, i, score=False):
+    '''establish leader-follower values for each individual'''
+    
+    window_length = 21
+    leader_follower = []
+    for frame_idx in data[str(i)]['FRAME_IDX']:
+        max_value = []
+        lag = []
+        neighbors = []
+        for n in data[str(i)]['CORRELATIONS']:
+            if n == i:
+                continue
+            if frame_idx in data[str(i)]['CORRELATIONS'][n]:
+                # delays = data[str(i)]['CORRELATIONS'][n][frame_idx][0] ## added 21.03.19
+                # correlations = data[str(i)]['CORRELATIONS'][n][frame_idx][1] ## added 21.03.19
+                # delays = delays[np.argmax(correlations[np.isfinite(correlations)])] ## added 21.03.19
+                # correlations = np.nanmax(correlations)
+                # lag.append(delays)
+                # max_value.append(correlations)
+                # lag.append(data[str(id)]['CORRELATIONS'][n][frame_idx][0])
+                # max_value.append(data[str(id)]['CORRELATIONS'][n][frame_idx][1])
+
+                if len(data[str(i)]['CORRELATIONS'][n][frame_idx]
+                       [1]) >= window_length:
+                    filtered_correlation = savgol_filter(
+                        data[str(i)]['CORRELATIONS'][n][frame_idx][1],
+                        window_length=window_length,
+                        polyorder=1)
+                    d1x = savgol_filter(
+                        data[str(i)]['CORRELATIONS'][n][frame_idx][1],
+                        window_length=21,
+                        polyorder=1,
+                        deriv=1)
+                    xtrm_pts = np.argwhere(
+                        np.diff(np.sign(d1x)) == -2).reshape(-1)
+                    if xtrm_pts.size > 0:
+                        xtrm_vals = filtered_correlation[xtrm_pts]
+                        xtrm_pt = xtrm_pts[np.argmax(xtrm_vals)]
+                        lag.append(data[str(i)]['CORRELATIONS'][n][frame_idx]
+                                   [0][1:][xtrm_pt])
+                        max_value.append(data[str(i)]['CORRELATIONS'][n]
+                                         [frame_idx][1][1:][xtrm_pt])
+                        neighbors.append(n)
+        if len(neighbors) > 0:
+            leader_follower.append(
+                (neighbors[np.argmax(max_value)], lag[np.argmax(max_value)]))
+    leader_follower = np.array(leader_follower)
+    print(i)
+    if score == True:
+        lf = np.sum(
+            [leader_follower[:, 1] > 0]) / leader_follower.shape[0] - np.sum(
+                [leader_follower[:, 1] < 0]) / leader_follower.shape[0]
+        return lf, leader_follower
+    else:
+        return leader_follower
+
+
+def get_shift(data, i, frame, cluster_dict, cluster=True):
+    '''calulate shift based on correlations'''
+    
+    window_length = 21
+    c = [c for c in cluster_dict[frame] if i in c][0]
+    max_value = []
+    lag = []
+    neighbors = []
+    if cluster == False:
+        iterations = data[str(i)]['CORRELATIONS']
+    else:
+        iterations = c
+    for n in iterations:
+        if n == i:
+            continue
+        if len(data[str(i)]['CORRELATIONS'][n][frame][1]) >= window_length:
+            filtered_correlation = savgol_filter(
+                data[str(i)]['CORRELATIONS'][n][frame][1],
+                window_length=window_length,
+                polyorder=1)
+            d1x = savgol_filter(data[str(i)]['CORRELATIONS'][n][frame][1],
+                                window_length=21,
+                                polyorder=1,
+                                deriv=1)
+            xtrm_pts = np.argwhere(np.diff(np.sign(d1x)) == -2).reshape(-1)
+            if xtrm_pts.size > 0:
+                xtrm_vals = filtered_correlation[xtrm_pts]
+                xtrm_pt = xtrm_pts[np.argmax(xtrm_vals)]
+                lag.append(
+                    data[str(i)]['CORRELATIONS'][n][frame][0][1:][xtrm_pt])
+                max_value.append(
+                    data[str(i)]['CORRELATIONS'][n][frame][1][1:][xtrm_pt])
+                neighbors.append(n)
+    if len(neighbors) > 0:
+        return neighbors[np.argmax(max_value)], lag[np.argmax(max_value)]
+    else:
+        return i, 0
+
+
+def var_norm_vecTS(x):
+    '''
+    create variance of the norm of a vector timeseries
+    INPUT:
+        x.shape(time, dim)
+    '''
+    assert len(x.shape) > 1, 'len(x.shape) < 1'
+    # return np.dot(x, x.T).diagonal().mean() //
+    return (x * x).sum(axis=1).mean()
+
+
+def shuffle_in_time(x):
+    '''
+    shuffles in time but keeping values of same times together
+    INPUT:
+        x.shape(time, dim)
+    '''
+    indices = np.arange(len(x))
+    np.random.shuffle(indices)
+    return 1 * x[indices]
+
+
+def minusMean_vecTS(x):
+    assert len(x.shape) > 1, 'len(x.shape) < 1'
+    return x - x.mean(axis=0)[None, :]
+
+
+def corrCoef1d(x, y):
+    return np.corrcoef(x, y=y)[0, 1]
+
+
+def corrCoef2d(x, y):
+    '''
+    create variance of the norm of a vector timeseries
+    motivated by [Spatio-temporal correlations in models...., Cavagna et. al., Physical Biology, 2016]
+    INPUT:
+        x.shape(time, dim)
+        x.shape(time, dim)
+    '''
+    cov = (x * y).sum(axis=1).mean()
+    norm = np.sqrt(var_norm_vecTS(x) * var_norm_vecTS(y))
+    return cov / norm
+
+
+def lag_corr(x,
+             y,
+             maxlag,
+             quantile=None,
+             sam=None,
+             plot=True,
+             saveplot=False,
+             bootstrap=False,
+             axs=None):
+    '''
+    computes the lagged correlation C(t) between x,y and y,x
+    x and y are assumed to be either 1dimensional or 2 dimensional (directions, velocity....)
+    AND bootstrapp the correlation between them with "samples" samples 
+    AND plots the results if wanted
+    INPUT:
+        x.shape(time) OR x.shape(time, 2)
+        y.shape(time) OR y.shape(time, 2)
+        maxlag int
+            defines the maximum lag
+        quantile float
+            defines the quantile computed from the bootstrapping
+        sam int
+            number of sample used for bootstrapping
+        plot bool
+            defines if the results are supposed to be plotted
+        saveplot bool
+    OUTPUT:
+        out = [C, lower, upper]
+            C.shape(2, maxlags)
+                Correlation between x(t), y(t+lag) and x(t+lag), y(t)
+                for different lags
+            lower float
+            upper float
+                lower and upper bounds from bootstrapping
+    '''
+    if quantile == None:
+        quantile = 0.025
+    if sam == None:
+        sam = 1001
+    assert x.shape == y.shape, 'x.shape != y.shape'
+    if len(x.shape) == 1:
+        minusMean = lambda x: x - x.mean()
+        corrCoef = corrCoef1d
+    elif len(x.shape) == 2:
+        minusMean = minusMean_vecTS
+        corrCoef = corrCoef2d
+    else:
+        assert 1 == 2, 'lag_corr only for 1 or 2d arrays'
+    maxlag = int(maxlag) + 1
+    sam = int(sam)
+    time = len(x)
+    out = []
+    # standardize the timeseries:
+    xx = minusMean(x)
+    yy = minusMean(y)
+
+    # do correlation for different lags:
+    C = np.empty((2, maxlag))
+    for i in range(maxlag):
+        xl = xx[:time - i]
+        yl = yy[i:]
+        C[0, i] = corrCoef(xl, yl)
+        xl = xx[i:]
+        yl = yy[:time - i]
+        C[1, i] = corrCoef(xl, yl)
+    out.append(C)
+    if bootstrap:
+        lower, upper = bootstrapp_corr(x, y, quantile, sam)
+        out.append(lower)
+        out.append(upper)
+    if plot:
+        f, axs = plt.subplots(1, figsize=plt.figaspect(1 / 2))
+        axs.scatter(range(maxlag),
+                    C[0],
+                    color='r',
+                    label=r'$C(x(t), y(t+\tau))$')
+        axs.scatter(range(maxlag),
+                    C[1],
+                    color='b',
+                    label=r'$C(y(t), x(t+\tau))$')
+        axs.set_xlabel(r'$\tau$ (lag)', fontsize=20)
+        axs.set_ylabel(r'$C(\tau)$', fontsize=20)
+        if bootstrap:
+            axs.hlines([lower, upper], 0, maxlag)
+        axs.yaxis.set_tick_params(labelsize=20)
+        axs.xaxis.set_tick_params(labelsize=20)
+        axs.legend(fontsize=20)
+        if saveplot:
+            f_name = Path.cwd() / 'LaggedCorrelation.png'
+            f.savefig(str(f_name), dpi=200)
+    return out
+
+
+def bootstrapp_corr(x, y, quantile, sam):
+    '''
+    bootstrapp the correlation between 2 TS based on 
+    "samples" samples and returns the 2 quantiles
+    '''
+    samples = int(sam)
+    assert samples > 1000, 'larger sample size is recommended (>=1000)'
+    assert quantile < 1, 'quantile must be lower 1'
+    assert quantile > 0, 'quantile must be larger 0'
+    assert x.shape == y.shape, 'x.shape != y.shape'
+    if len(x.shape) == 1:
+        corrCoef = corrCoef1d
+        minusMean = lambda x: x - x.mean()
+    elif len(x.shape) == 2:
+        corrCoef = corrCoef2d
+        minusMean = minusMean_vecTS
+    res = np.zeros(samples, dtype='float')
+    x = minusMean(x)
+    y = minusMean(y)
+    for i in range(samples):
+        xx = shuffle_in_time(x)
+        yy = shuffle_in_time(y)
+        res[i] = corrCoef(xx, yy)
+    lower = np.sort(res)[int(samples * quantile)]
+    upper = np.sort(res)[samples - int(samples * quantile)]
+    return [lower, upper]
+
+
+def tracks_to_pool(tracks):
+    '''creates pool by combining all identities of track format'''
+    
+    x = np.array([])
+    y = np.array([])
+    z = np.array([])
+    frame_idx = np.array([], dtype=np.int)
+    identity = np.array([], dtype=np.int)
+    direction = np.array([])
+    label = np.array([], dtype=np.int)
+    group = np.array([], dtype=np.int)
+    for i in tracks['IDENTITIES']:
+        x = np.append(x, tracks[str(i)]['X'])
+        y = np.append(y, tracks[str(i)]['Y'])
+        frame_idx = np.append(frame_idx, tracks[str(i)]['FRAME_IDX'])
+        identity = np.append(identity,
+                             np.repeat(i, tracks[str(i)]['FRAME_IDX'].size))
+        if 'DIRECTION' in tracks[str(i)]:
+            direction = np.append(direction, tracks[str(i)]['DIRECTION'])
+        if 'Z' in tracks[str(i)]:
+            z = np.append(z, tracks[str(i)]['Z'])
+        if 'LABEL' in tracks[str(i)]:
+            label = np.append(label, tracks[str(i)]['LABEL'])
+        if 'GROUP' in tracks[str(i)]:
+            group = np.append(group, tracks[str(i)]['GROUP'])
+    tracks = {}
+    tracks['X'] = x
+    tracks['Y'] = y
+    tracks['FRAME_IDX'] = frame_idx
+    tracks['IDENTITY'] = identity
+    if direction.size > 0:
+        tracks['DIRECTION'] = direction
+    if z.size > 0:
+        tracks['Z'] = z
+    if label.size > 0:
+        tracks['LABEL'] = label
+    if group.size > 0:
+        tracks['GROUP'] = group
+    return tracks
+
+
+def get_clusters(data, frame_list=None):
+    '''Calculate subclusters within group'''
+    
+    cluster_dict = {}
+    cluster_id = {}
+    data_pooled = tracks_to_pool(data)
+    if frame_list == None:
+        frame_list = np.unique(data_pooled['FRAME_IDX'])
+    for frame in frame_list:
+        X = np.transpose((data_pooled['X'][data_pooled['FRAME_IDX'] == frame],
+                          data_pooled['Y'][data_pooled['FRAME_IDX'] == frame],
+                          [data_pooled['FRAME_IDX'] == frame]))
+        Z = linkage(X, metric='euclidean', method='ward')
+        c, coph_dists = cophenet(Z, pdist(X))
+        last = Z[-10:, 2]
+        last_rev = last[::-1]
+        idxs = np.arange(1, len(last) + 1)
+        acceleration = np.diff(last, 2)  # 2nd derivative of the distances
+        acceleration_rev = acceleration[::-1]
+        k = acceleration_rev.argmax(
+        ) + 2  # if idx 0 is the max of this we want 2 clusters
+        max_d = last_rev[np.where(idxs == k)]
+        clusters = fcluster(Z, max_d, criterion='distance')
+        Y = data_pooled['IDENTITY'][data_pooled['FRAME_IDX'] == frame]
+        sorted_ids = [x for _, x in sorted(zip(clusters, Y))]
+        _, bin_count = np.unique(clusters, return_counts=True)
+        cluster_dict[frame] = [[]] * len(bin_count)
+        for i, c in enumerate(bin_count):
+            cluster_dict[frame][i] = sorted_ids[sum(bin_count[:i]
+                                                    ):sum(bin_count[:i]) + c]
+        cluster_id[frame] = []
+        for e, c in enumerate(cluster_dict[frame]):
+            for i in np.unique(data_pooled['IDENTITY'][data_pooled['FRAME_IDX']
+                                                       == frame]):
+                if np.isin(i, c):
+                    cluster_id[frame].append((i, e + 1))
+    return cluster_dict, cluster_id
+
+
+
+def get_subgroup_leadership(data, cluster_dict):
+    '''get leader-follower of subgroups:
+    output: frame,cluster,leader,follower'''
+
+    sub_lf = {}
+    for frame in cluster_dict:
+        sub_lf[frame] = {}
+        for n, c in enumerate(cluster_dict[frame]):
+            lf_list = []
+            for i in c:
+                values = get_leader_follower(data, i)
+                values = values[frame]
+                lf_list.append(values)
+            follower = c[np.argmin([value[1] for value in lf_list])]
+            leader = c[np.argmax([value[1] for value in lf_list])]
+            sub_lf[frame][n] = []
+            sub_lf[frame][n] = leader, follower
+    return sub_lf
+
+
+def get_time_windows(data, time_window):
+    '''Create array of time windows based on x and y.'''
+
+    for i in data['IDENTITIES']:
+        data[str(i)]['TIME_WINDOW'] = []
+        min_frame = data[str(i)]['FRAME_IDX'].min()
+        max_frame = data[str(i)]['FRAME_IDX'].max()
+        for frame in data[str(i)]['FRAME_IDX']:
+            mask = (data[str(i)]['FRAME_IDX'] >= frame - time_window // 2) & (
+                data[str(i)]['FRAME_IDX'] <= frame + time_window // 2)
+            x = np.diff(data[str(i)]['X'][mask])
+            y = np.diff(data[str(i)]['Y'][mask])
+            window = np.transpose([x, y])
+            if frame - min_frame < time_window // 2:
+                window = np.concatenate([
+                    window,
+                    np.full((time_window - window.shape[0], 2),
+                            np.nan,
+                            dtype=np.float)
+                ],
+                                        axis=0)
+            elif max_frame - frame < time_window // 2:
+                window = np.concatenate([
+                    np.full((time_window - window.shape[0], 2),
+                            np.nan,
+                            dtype=np.float),
+                    window,
+                ],
+                                        axis=0)
+            data[str(i)]['TIME_WINDOW'].append(window)
+        data[str(i)]['TIME_WINDOW'] = np.stack(data[str(i)]['TIME_WINDOW'],
+                                               axis=0)
+    return data
 
 
 def read_csv(file):
@@ -2082,6 +2552,37 @@ def calc_pairwise_distances(tracks,asarray=True):
         pairwise_distances = out.reshape(len(pairwise_distances.keys()),len(pairwise_distances.keys())-1)
     return pairwise_distances
 
+
+
+def pairwise_correlations(data_i, data_n, i, n, correlation_window):
+    data_i['CORRELATIONS'][n] = {}
+    for frame in data_i['FRAME_IDX']:
+        correlations = []
+        delays = []
+        for delay in range(correlation_window):
+            delay -= correlation_window // 2
+            if not np.isin(frame + delay, data_n['FRAME_IDX']):
+                continue
+            window_i = data_i['TIME_WINDOW'][np.argwhere(
+                data_i['FRAME_IDX'] == frame)[0][0]]
+            window_n = data_n['TIME_WINDOW'][np.argwhere(
+                data_n['FRAME_IDX'] == frame + delay)[0][0]]
+            correlation = np.nansum([
+                unit_vector(velocity_i) @ unit_vector(velocity_n)
+                for velocity_i, velocity_n in zip(window_i, window_n)
+            ]) / window_i.shape[0]
+            delays.append(delay)
+            correlations.append(correlation)
+        delays = np.array(delays)
+        correlations = np.array(correlations)
+        if (len(delays) > 0) and (0 < np.sum(np.isfinite(correlations))):
+            # data_i['CORRELATIONS'][n][frame] = (delays[np.argmax(correlations[np.isfinite(correlations)])],np.nanmax(correlations))
+            data_i['CORRELATIONS'][n][frame] = (delays, correlations)
+    print('finished pair', [i, n])
+    return (i, data_i)
+
+
+
 def trex2tracks(files, identities = np.arange(4), interpolate=True, start_idx = 1200, end_idx = 72000, threshold = 14):
     '''create tracks{} dictionary from trex.run output.
     Function also filter outliers by thresholding distance to center of arena and interpolate x,y'''
@@ -2487,11 +2988,13 @@ def area_covered(tracks, distance_threshold=14, individual_radius=1, plot=False)
     return (area/total_area)*100
 
 
+
 def calc_xcorr(x, y, normed=True, maxlags=None):
     """ Calculate time lagged cross-correlation
         the input of y[i] is shifted according to y[i+shift] 
         with shift from -mlags to +mlags
     """
+    
     c = np.correlate(x, y, mode=2)
     if (normed == True):
         c /= np.sqrt(np.dot(x, x) * np.dot(y, y))
@@ -2506,4 +3009,3 @@ def calc_xcorr(x, y, normed=True, maxlags=None):
             c = c[tlags - maxlags:tlags + maxlags + 1]
 
     return lags, c
-
