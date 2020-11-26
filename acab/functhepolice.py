@@ -2432,5 +2432,45 @@ def ratio_expl_explt(tracks):
     sum_means = np.sum(means)
     means = means/sum_means
 
-    ratio = means[0]/means[1]
+    exploration = means[0]
+    exploitation = means[1]
+    ratio = 1/(exploration/exploitation)
     return ratio
+
+def area_covered(tracks, distance_threshold=14, individual_radius=1, plot=False):
+    '''calculate area covered by group based on masking the arena with a circular mask of radius distance_threshold.
+    Individual coordinates are drawn with individual_radius and the amount of ones on the binary image are calculate
+    and compared to entire number of pixels within the mask.'''
+    
+    max_width = 30 ## depends on tracking approach
+    canvas = np.zeros((2040, 2046), np.uint8)
+    mask = np.zeros((2040, 2046), np.uint8)
+
+    for i in tracks['IDENTITIES']:
+        x_arr = (tracks[str(i)]['X']/ 30 * 0.997067449) * canvas.shape[0] 
+        y_arr = (tracks[str(i)]['Y']/ 30) * canvas.shape[1] 
+
+        pts = np.array([x_arr,y_arr]).reshape(2,len(x_arr)).T
+        pts = [tuple((int(p[0]),int(p[1]))) for p in pts]
+        for p in pts:
+            canvas = cv2.circle(canvas, p, individual_radius, (255,255,255), -1, cv2.LINE_AA) 
+
+    circle_x = int(0.5 * 0.997067449 * mask.shape[0])
+    circle_y = int(0.5*mask.shape[1])
+    r = (distance_threshold/max_width)*np.mean([mask.shape[0],mask.shape[1]])
+
+    cv2.circle(mask,(circle_x,circle_y),int(r), (255,255,255),-1,cv2.LINE_AA)
+
+    inv_mask = cv2.bitwise_not(mask)
+    out_img = canvas + 0.1 * inv_mask
+
+    area = len(canvas[canvas>0])
+    total_area = len(mask[mask>0])
+    
+    if plot == True:
+        fig, ax = plt.subplots(figsize=(10, 10))
+        ax.imshow(cv2.blur(out_img,(5,5),0), interpolation='none', origin='lower')
+        plt.text(30,30,str('area covered: ' + str(np.round(area/total_area*100)) + '%'),c=(1,1,1),fontsize=13)
+        plt.show()
+    
+    return (area/total_area)*100
