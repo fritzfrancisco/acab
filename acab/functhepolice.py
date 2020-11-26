@@ -413,6 +413,17 @@ def get_direction(tracks):
     return tracks
 
 
+def _direction(tracks):
+    '''Function to calculate direction for each frame from x- and y-coordinates'''
+
+    for i in tracks['IDENTITIES']:
+        direction = np.arctan2(np.diff(tracks[str(i)]['Y']),
+                               np.diff(tracks[str(i)]['X']))
+        direction = np.append(direction, direction[-1])
+        tracks[str(i)]['ANGLE'] = direction
+    return tracks
+
+
 def get_dist_2_rois(tracks, roi_centers):
     '''Fuction to calculate distances to rois of a single individual for each frame from x- and y-coordinates. 
     Output has same length as roi_centers input'''
@@ -2097,7 +2108,7 @@ def trex2tracks(files, identities = np.arange(4), interpolate=True, start_idx = 
             
         tracks[str(i)]['SPEED'] = _speed(tracks[str(i)])
         tracks[str(i)]['FRAME_IDX'] = np.array(frame_idx).astype(float)
-    tracks = get_direction(tracks)
+    tracks = _direction(tracks)
     del data
     
     frame_idx = np.unique(np.concatenate([np.load(files[i])['frame'] for i in identities]))
