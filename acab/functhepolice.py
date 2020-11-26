@@ -1,4 +1,3 @@
-
 import gc
 import glob
 import itertools
@@ -2354,6 +2353,7 @@ def get_incident(keys, value='2020-05-25'):
 def get_instances(file,
                   save=False,
                   plot=False,
+                  distance_threshold_to_roi = 0.08,
                   output_dir='/home/fritz/Desktop/data_20200715/'):
     '''Function to retrieve instances where xy coordinates are within a specified range.
     In this case it is specifically designed for .h5 input retrieved through track2h5()
@@ -2395,7 +2395,7 @@ def get_instances(file,
                 continue
             else:
                 distances = np.sqrt((x - cx)**2 + (y - (cy))**2)
-                boolean = np.where(distances <= cr)[0]
+                boolean = np.where(distances <= distance_threshold_to_roi)[0]
                 instances[str(int(i))][key] = {
                     'distances': distances,
                     'boolean': boolean
@@ -3013,3 +3013,4 @@ def calc_xcorr(x, y, normed=True, maxlags=None):
             c = c[tlags - maxlags:tlags + maxlags + 1]
 
     return lags, c
+
