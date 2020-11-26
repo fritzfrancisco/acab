@@ -2179,7 +2179,10 @@ def track2h5(
                     if plot == True:
                         gray = cv2.circle(frame[:frame.shape[0] - 20, :],
                             (int(data[1]), int(data[2])), 1, (0, 255, 0), -1)
-
+                        gray = cv2.putText(frame[:frame.shape[0] - 20, :], str(identity), 
+                            (int(data[1]), int(data[2])) , cv2.FONT_HERSHEY_SIMPLEX,  
+                            0.5, (255, 255, 255), 1, cv2.LINE_AA) 
+                        
                     list_id = [x[2] for x in current]
                     for previous_element in pre:
                         if previous_element[2] not in list_id:
