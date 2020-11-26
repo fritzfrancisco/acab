@@ -2485,3 +2485,25 @@ def area_covered(tracks, distance_threshold=14, individual_radius=1, plot=False)
         plt.show()
     
     return (area/total_area)*100
+
+
+def calc_xcorr(x, y, normed=True, maxlags=None):
+    """ Calculate time lagged cross-correlation
+        the input of y[i] is shifted according to y[i+shift] 
+        with shift from -mlags to +mlags
+    """
+    c = np.correlate(x, y, mode=2)
+    if (normed == True):
+        c /= np.sqrt(np.dot(x, x) * np.dot(y, y))
+
+    datl = np.min([len(x), len(y)])
+    lags = np.arange(1, 2 * datl) - datl
+
+    if (maxlags is not None):
+        tlags = int(len(lags) / 2)
+        if (maxlags < tlags):
+            lags = lags[tlags - maxlags:tlags + maxlags + 1]
+            c = c[tlags - maxlags:tlags + maxlags + 1]
+
+    return lags, c
+
