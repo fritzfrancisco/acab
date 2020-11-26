@@ -2340,8 +2340,7 @@ def get_time_to_roi(file,
 
 
 def get_visits(file,
-                    distance_threshold_to_roi = 0.08,
-                    output_dir='/home/ffrancisco/Desktop/data_20200715/'):
+                    distance_threshold_to_roi = 0.08):
     '''Function to retrieve instances where xy coordinates are within a specified range and leave this vicinity again.
     In this case it is specifically designed for .h5 input retrieved through track2h5()
     which contains cylinder coordinates and radii. 
