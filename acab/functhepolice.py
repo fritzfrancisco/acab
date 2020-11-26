@@ -2015,12 +2015,11 @@ def collect_trex(directory,identities=[0,1,2,3]):
     return df, canvas
 
 
-def full_sig_xlags(tracks, asarray=True, exclude_ids=[]):
+def full_sig_xlags(tracks, value='SPEED', asarray=True, exclude_ids=[], fps = 20):
     '''calculate mean correlation based leader-follower value from the entire signal'''
     
     pairs = itertools.permutations(tracks['IDENTITIES'], 2)
     pairs = np.array(list(pairs))
-    fps = 20
     lags = {}
     for i in np.delete(tracks['IDENTITIES'],np.array(exclude_ids, dtype=np.int)):
         lags[str(i)] = 0
@@ -2029,7 +2028,7 @@ def full_sig_xlags(tracks, asarray=True, exclude_ids=[]):
         if str(pair[0]) not in lags or str(pair[1]) not in lags:
             continue
         index = cooccurrence_index(tracks[str(pair[0])],tracks[str(pair[1])])
-        xsig = calc_xcorr(tracks[str(pair[0])]['SPEED'][index[0]],tracks[str(pair[1])]['SPEED'][index[1]])
+        xsig = calc_xcorr(tracks[str(pair[0])][value][index[0]],tracks[str(pair[1])][value][index[1]])
         lags[str(pair[0])] += xsig[0][np.argmax(xsig[1])]/fps
 
     for i in lags:
@@ -2038,6 +2037,7 @@ def full_sig_xlags(tracks, asarray=True, exclude_ids=[]):
     if asarray == True:
         lags = np.array([lags[str(i)] for i in lags.keys()])
     return lags
+
 
 def calc_distance_stack(tracks):
     '''calculate distance stack, as stack of matrices.
