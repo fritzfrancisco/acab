@@ -2391,3 +2391,46 @@ def get_visits(file,
                     'visits': count,
                 }
     return visits
+
+
+def ratio_expl_explt(tracks):
+    '''Function to calculate ratio exploration/exploitation based on group speed and polarization.
+    tracks are expected to be retrieved from trex.run output.'''
+
+    speed = group_speed(tracks,smoothing_window = 5)
+    polarization = group_polarization(tracks, smoothing_window = 5)
+
+    polarization = savgol_filter(detrend(polarization),801,3)
+    speed = savgol_filter(detrend(speed),801,3)
+
+    polarization = savgol_filter(np.diff(polarization), 21,3)
+    speed = savgol_filter(np.diff(speed), 21,3)
+
+    exploration = np.argwhere(speed/np.max([speed])>(polarization/np.max([polarization])))
+    exploitation = np.argwhere(speed/np.max([speed])<(polarization/np.max([polarization])))
+
+    exploit = np.concatenate(exploitation)
+    explore = np.concatenate(exploration)
+
+    index_explore = explore[np.where(np.diff(explore) != 1)[0]]
+    index_exploit = exploit[np.where(np.diff(exploit) != 1)[0]]
+
+    min_index = np.max([np.argmin(index_exploit),np.argmin(index_explore)])
+    max_index = np.min([np.argmax(index_exploit),np.argmax(index_explore)])
+
+    d_explt_explr = []
+    d_explr_explt = []
+
+    for i, explr in enumerate(index_explore[:max_index]):
+         d_explt_explr = np.append(d_explt_explr, index_exploit[i+1]-explr)
+
+
+    for i, explt in enumerate(index_exploit[:max_index]):
+         d_explr_explt = np.append(d_explr_explt, index_explore[i+1]-explt)
+    
+    means = np.array([np.mean(d_explr_explt), np.mean(d_explt_explr)])
+    sum_means = np.sum(means)
+    means = means/sum_means
+
+    ratio = means[0]/means[1]
+    return ratio
