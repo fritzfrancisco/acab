@@ -1,7 +1,9 @@
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import matplotlib.colors as colors
+from matplotlib.patches import ConnectionPatch
 import numpy as np
+from scipy import stats
 from acab import juteUtils as jut
 
 def get_ABC(N, Nskip=None):
@@ -184,3 +186,111 @@ def histProb(dat, axs=None, **kwgs):
     return out
 
 
+def shareXlimits(axs):
+    '''
+    chooses automatically the maximal
+    INPUT:
+        axs list or 1d-np.ndarray
+    '''
+    xlim = list(axs[0].get_xlim())
+    for ax in axs[1:]:
+        xlim += list(ax.get_xlim())
+    minne  = np.min(xlim)
+    maxxe  = np.max(xlim)
+    for ax in axs:
+        ax.set_xlim([minne, maxxe])
+
+
+def shareYlimits(axs):
+    '''
+    INPUT:
+        axs list or 1d-np.ndarray
+    '''
+    ylim = list(axs[0].get_ylim())
+    for ax in axs[1:]:
+        ylim += list(ax.get_ylim())
+    minne  = np.min(ylim)
+    maxxe  = np.max(ylim)
+    for ax in axs:
+        ax.set_ylim([minne, maxxe])
+
+
+def connectionPatch(axA, axB, posA, posB, **kwgs):
+    '''
+    Connects points in 2 axes with a line (ACROSS axis boundaries)
+        - just a simple wrapper to remember
+    Note that axA should always be the last axes, e.g.
+        f, [ax0, ax1] = plt.subplots(2)
+        axA = ax1
+        axB = ax2
+    otherwise the connection is not visible in the last axis 
+    (because it is overdrawn)
+    '''
+    con = ConnectionPatch(axesA=axA, axesB=axB, xyA=posA, xyB=posB,
+                          coordsA="data", coordsB="data", **kwgs)
+    axA.add_artist(con)
+
+
+def yAxisRight(axs):
+    axs.yaxis.tick_right()
+    axs.yaxis.set_label_position('right')
+    axs.spines['right'].set_visible(True)
+    axs.spines['left'].set_visible(False) # no spine 
+
+
+def yAxisOff(axs):
+    axs.get_yaxis().set_visible(False) # no ticks
+    axs.spines['left'].set_visible(False) # no spine 
+
+
+def regressionPlot(x, y, bins=None, alpha=None, c=None,
+                   xlab=None, ylab=None, s=None, polyfit=None,
+                   axs=None):
+    '''
+    plot collection to estimate the relation between x and y
+    . PLOT0            PLOT1           PLOT2
+    . raw data         2d-Histogram    equally weighted bin data
+    .             +equally weighted    +regression
+    .                bin data
+    .             + regression
+    '''
+    polyfit = jut.setDefault(polyfit, False)
+    bins = jut.setDefault(bins, 40)
+    alpha = jut.setDefault(alpha, 0.4)
+    c = jut.setDefault(c, 'k')
+    xlab = jut.setDefault(xlab, 'x')
+    ylab = jut.setDefault(ylab, 'y')
+    s = jut.setDefault(s, 6)
+    axsWasNone = False
+    if axs is None or len(axs) != 3:
+        axsWasNone = True
+        f, axs = plt.subplots(1, 3, figsize=0.8*plt.figaspect(1/3.5), sharex=True)
+    # plot: raw
+    axs[0].scatter(x, y, c=c, alpha=alpha/4, s=s/3)
+    # plot: histogram + equally weighted bins
+    histOut = axs[1].hist2d(x, y, bins=bins, cmap=cm.Reds)
+    xEqualPart, yEqualPart = jut.bin2d(x, y, bins=bins, func=np.mean, equalWeight=True)
+    _ = [ax.scatter(xEqualPart, yEqualPart, c=c, s=s, alpha=alpha) for ax in axs[1:]]
+    # plot: regression or polyfit
+    if polyfit:
+        regr = np.polyfit(xEqualPart, yEqualPart, 3)
+        fit = np.poly1d(regr)
+    else:
+        regr = stats.linregress(x, y)
+        fit = lambda a : a*regr[0] + regr[1]
+    _ = [ax.plot(xEqualPart, fit(xEqualPart)) for ax in axs[1:]]
+    # fancy connections:
+    xes = [xEqualPart[0], xEqualPart[-1]]
+    for xe in xes:
+        pos = [xe, fit(xe)]
+        connectionPatch(axs[2], axs[1], pos, pos, linestyle='--', color='C0')
+    # labels, ticks and limits
+    shareYlimits(axs[:-1])
+    axs[1].set_yticklabels([])
+    yAxisRight(axs[2])
+    axs[1].set_xlabel(xlab)
+    _ = [ax.set_ylabel(ylab) for ax in [axs[0], axs[-1]]]
+    if axsWasNone:
+        f.tight_layout()
+        return regr, f, axs
+    return regr

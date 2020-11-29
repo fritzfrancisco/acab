@@ -5,6 +5,13 @@ from pathlib import Path
 from skimage import measure
 import pdb
 
+
+def setDefault(x, val):
+    if x is None:
+        x = val
+    return x
+
+
 def var_norm_vecTS(x):
     '''
     create variance of the norm of a vector timeseries
@@ -308,5 +315,110 @@ def labelSplitAndMerge(data, split=None, background=None):
         label = partLabel(dat)
         labelAll = JoinLabels(labelAll, label)
     return labelAll
+
+
+def bin2d(dat, dat2, bins=None, func=None, equalWeight=None):
+    '''
+    similar to plt.hist2d but computes func(=mean, or median or ...) 
+    for equally sized  bins BASED ON 'dat' (first input)
+        if equalWeight=True: bins are equally space
+    INPUT:
+        dat
+        dat2
+        bins
+        func(array) -> float
+            function which transforms array of arbitrary shape -> float 
+    OPTIONAL INPUT:
+        equalWeight bool
+            True: each bin contains same amount of data points
+            False: equally distant bins, and therefore can vary in their data content
+            
+    '''
+    # DEFAULTS-START
+    bins = setDefault(bins, int(len(dat)/2))
+    func = setDefault(func, np.nanmean)
+    equalWeight = setDefault(equalWeight, False)
+    # DEFAULTS-END
+    dat = np.array(dat)
+    dat2 = np.array(dat2)
+    if equalWeight:
+        indicesOfBin = Indices_EqualParts(dat, bins)
+    else:
+        indicesOfBin = Indices_EquidistantBins(dat, bins)
+    # output container
+    dat_mean = np.empty(bins) * np.nan
+    dat2_mean = np.empty(bins) * np.nan
+    for i, there in enumerate(indicesOfBin):
+        if len(there) > 0:
+            dat_mean[i] = func(dat[there])
+            dat2_mean[i] = func(dat2[there])
+    return dat_mean, dat2_mean
+
+
+def Indices_EqualParts(data, Npart):
+    '''
+    split data in "Npart" equal parts and return indices
+    of the parts ordered such that parts with smallest values
+    is first and part with largest values last
+    INPUT:
+        data shape=(time)
+        Npart int
+            number of equal parts the data is split to 
+    OUTPUT:
+        splitted_data len=Npart
+            contains same data 
+    '''
+    borders = np.linspace(0, 1, Npart+1)[1:-1]  # no 0th, 100th perc.
+    borders = np.percentile(data, borders*100)
+    splitted_data = []
+    # first split
+    there = np.where(data <= borders[0])[0]
+    splitted_data.append(there)
+    # all splits between first and last
+    for i in range(0, len(borders)-1):
+        there = np.where((data > borders[i]) & (data <= borders[i+1]))[0]
+        splitted_data.append(there)
+    # last split
+    there = np.where(data > borders[-1])[0]
+    splitted_data.append(there)
+    return splitted_data
+
+
+def Indices_EquidistantBins(data, Nbins):
+    '''
+    split data in "Nbins" bins.
+    The bins have the same width
+    -> the number of data-points in the bin will vary.
+    1st. Part contains indices with smallest data
+    last Part contains indices with largest data
+    INPUT:
+        data shape=(time)
+        Nbins int
+            number of bins the data is assigned to
+    OUTPUT:
+        splitted_data len=Nbins
+            contains same data 
+    '''
+    dat = np.array(data)
+    minn = np.nanmin(dat)
+    maxx = np.nanmax(dat)
+    dat_mean = np.empty(Nbins) * np.nan
+    borders = np.linspace(minn, maxx, Nbins+1)
+    indicesOfBin = []
+    for i in range(Nbins):
+        lb = borders[i]
+        ub = borders[i+1]
+        there = np.where((lb<dat) & (dat<=ub))[0]
+        indicesOfBin.append(there)
+    return indicesOfBin
+
+
+def angle_between_angles(phi0, phi1):
+    '''
+    returns the smaller angle between two angles (phi0, phi1)
+    '''
+    angleBetween = np.abs(phi0 - phi1) # actually the abs is not necessary
+    angleBetween = np.mod(angleBetween + np.pi, 2*np.pi) - np.pi
+    return np.abs(angleBetween)
 
 
