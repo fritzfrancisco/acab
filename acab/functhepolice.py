@@ -3014,3 +3014,26 @@ def calc_xcorr(x, y, normed=True, maxlags=None):
 
     return lags, c
 
+
+def fraction_in_roi(tracks, 
+                    center = (int(14/2), int(14/2)), 
+                    distance_threshold_to_roi = 0.08):
+    '''Calculate fraction of group that has entered the region of interest throughout the entire trial.'''
+    
+    area_inner_tank = 423112 ## px measured at bottom of tank
+    r = np.sqrt(area_inner_tank/np.pi)
+    px2cm = r/30
+    trex2px = 2046/30
+    
+    count = 0
+                    
+    for i in tracks['IDENTITIES']:
+        distances = np.sqrt(np.power(tracks[str(i)]['X'] - center[0],2) + np.power(tracks[str(i)]['Y'] - center[1],2))
+        distances = ((distances*trex2px)/(px2cm))/100 ## in meters
+        in_roi = np.where(distances < distance_threshold_to_roi)[0]
+        if len(in_roi) > 0:
+                    count += 1
+    fraction = count/len(tracks['IDENTITIES'])
+                    
+    return fraction
+        
