@@ -2591,7 +2591,8 @@ def trex2tracks(files, identities = np.arange(4), interpolate=True, start_idx = 
     Function also filter outliers by thresholding distance to center of arena and interpolate x,y'''
 
     tracks = {'IDENTITIES': identities}
-    
+    global_frame_idx = np.unique(np.concatenate([np.load(files[i])['frame'] for i in identities]))
+
     for i in identities:
         tracks[str(i)] = {}
         data = np.load(files[i])
@@ -2599,27 +2600,43 @@ def trex2tracks(files, identities = np.arange(4), interpolate=True, start_idx = 
         distance = np.sqrt(
             np.power(data['X'][index] - 15, 2) + np.power(data['Y'][index] - 15, 2))
         if interpolate==True:
-            x_itpd, _ = interpolate_signal(data['X'][index][distance < threshold],
+            x, _ = interpolate_signal(data['X'][index][distance < threshold],
                                            data['frame'][index][distance < threshold])
-            y_itpd, frame_idx = interpolate_signal(data['Y'][index][distance < threshold],
+            y, id_frame_idx = interpolate_signal(data['Y'][index][distance < threshold],
                                                    data['frame'][index][distance < threshold])
-
-            tracks[str(i)]['X'] = np.array(x_itpd).astype(float)
-            tracks[str(i)]['Y'] = np.array(y_itpd).astype(float)
-        else:
-            tracks[str(i)]['X'] = np.array(data['X'][index][distance < threshold]).astype(float)
-            tracks[str(i)]['Y'] = np.array(data['Y'][index][distance < threshold]).astype(float)
             
-        tracks[str(i)]['SPEED'] = _speed(tracks[str(i)])
-        tracks[str(i)]['FRAME_IDX'] = np.array(frame_idx).astype(float)
-    tracks = _direction(tracks)
+        else:
+            x = np.array(data['X'][index][distance < threshold]).astype(float)
+            y = np.array(data['Y'][index][distance < threshold]).astype(float)
+            id_frame_idx = data['frame'][index][distance < threshold]
+            
+        valid_frames = np.isin(global_frame_idx, id_frame_idx)
+        invalid_frames = np.array(global_frame_idx[~valid_frames])
+        invalid_frames = invalid_frames[(invalid_frames >= start_idx) & (invalid_frames < end_idx)]
+        out = np.append([id_frame_idx,x,y],
+                        [invalid_frames,np.repeat(np.nan,len(invalid_frames)),
+                         np.repeat(np.nan,len(invalid_frames))])
+        out = out.reshape(-1,3)
+        out = out[np.argsort(out[:, 0])]
+
+        tracks[str(i)]['FRAME_IDX'] = out[:,0]
+        tracks[str(i)]['X'] = out[:,1]
+        tracks[str(i)]['Y'] = out[:,2]
+
+        for key in tracks[str(i)].keys():
+            tracks[str(i)][key] = np.array(tracks[str(i)][key]).astype(float)
+                
+        tracks[str(i)]['SPEED'] = get_speed(tracks[str(i)])
+        tracks[str(i)]['FRAME_IDX'] = np.array(id_frame_idx).astype(float)
+    tracks = get_direction(tracks)
     del data
-    
-    frame_idx = np.unique(np.concatenate([np.load(files[i])['frame'] for i in identities]))
-    index = np.where((frame_idx >= start_idx) & (frame_idx < end_idx))[0]
-    frame_idx = np.arange(np.min(frame_idx[index]),np.max(frame_idx[index]))
+
+    index = np.where((global_frame_idx >= start_idx) & (global_frame_idx < end_idx))[0]
+    frame_idx = np.arange(np.min(global_frame_idx[index]),np.max(global_frame_idx[index]))
     tracks['FRAME_IDX'] = frame_idx.astype(np.int32)
-    ret = np.array([[tracks[str(i)]['X'],tracks[str(i)]['Y']] for i in tracks['IDENTITIES']])
+    
+    ret = np.array([[tracks[str(i)]['X'],tracks[str(i)]['Y']] for i in tracks['IDENTITIES']], dtype=object)
+
     try:
         assert len(ret.shape) == 3
         ret = True
@@ -2629,6 +2646,7 @@ def trex2tracks(files, identities = np.arange(4), interpolate=True, start_idx = 
 #         print("No tracking data retrieved: \n", os.path.dirname(files[0]))
         ret = False
         return ret, tracks
+
     
 def check_corruption(files):
     '''check trex.run output files (.npz) for corruptions'''
