@@ -2596,7 +2596,7 @@ def trex2tracks(files, identities = np.arange(4), interpolate=True, start_idx = 
     for i in identities:
         tracks[str(i)] = {}
         data = np.load(files[i])
-        index = np.where((data['frame'] >= start_idx) & (data['frame'] < end_idx))[0]
+        index = np.where((data['frame'] >= start_idx) & (data['frame'] < end_idx) & (np.isfinite(data['X']) == True))[0]
         distance = np.sqrt(
             np.power(data['X'][index] - 15, 2) + np.power(data['Y'][index] - 15, 2))
         if interpolate==True:
@@ -2613,9 +2613,9 @@ def trex2tracks(files, identities = np.arange(4), interpolate=True, start_idx = 
         valid_frames = np.isin(global_frame_idx, id_frame_idx)
         invalid_frames = np.array(global_frame_idx[~valid_frames])
         invalid_frames = invalid_frames[(invalid_frames >= start_idx) & (invalid_frames < end_idx)]
-        out = np.append([id_frame_idx,x,y],
+        out = np.c_[[id_frame_idx,x,y],
                         [invalid_frames,np.repeat(np.nan,len(invalid_frames)),
-                         np.repeat(np.nan,len(invalid_frames))])
+                         np.repeat(np.nan,len(invalid_frames))]].T
         out = out.reshape(-1,3)
         out = out[np.argsort(out[:, 0])]
 
