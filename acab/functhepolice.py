@@ -3036,7 +3036,8 @@ def calc_xcorr(x, y, normed=True, maxlags=None):
 def fraction_in_roi(tracks, 
                     center = None, 
                     threshold = 14,
-                    distance_threshold_to_roi = 0.08):
+                    distance_threshold_to_roi = 0.08,
+                    fps = 20):
     '''Calculate fraction of group that has entered the region of interest throughout the entire trial.'''
     
     if center is None:
@@ -3054,9 +3055,50 @@ def fraction_in_roi(tracks,
         distances = ((distances*trex2px)/(px2cm))/100 ## in meters
         distances = distances[np.isfinite(distances)]
         in_roi = distances[distances < distance_threshold_to_roi]
-        if len(in_roi) > 0:
+        if len(in_roi)/fps > 1:
                     count += 1
     fraction = count/len(tracks['IDENTITIES'])
                     
     return fraction
+
+
+def group_time_in_roi(tracks, 
+                    center = None, 
+                    threshold = 14,
+                    distance_threshold_to_roi = 0.08,
+                    fps = 20,
+                    percent=False):
+    '''Calculate amount of time the group spends withing given radius of the region of interest throughout the entire trial.'''
+    
+    if center is None:
+        center = (int(threshold/2), int(threshold/2))
+
+    area_inner_tank = 423112 ## px measured at bottom of tank
+    r = np.sqrt(area_inner_tank/np.pi)
+    px2cm = r/30
+    trex2px = 2046/30
+    
+    count = 0
+    
+    frames = []
+    for i in tracks['IDENTITIES']:
+        distances = np.sqrt(np.power(tracks[str(i)]['X'] - center[0],2) + np.power(tracks[str(i)]['Y'] - center[1],2))
+        distances = ((distances*trex2px)/(px2cm))/100 ## in meters
+        distances = distances[np.isfinite(distances)]
+        if percent == True:
+            length = len(tracks[str(i)]['FRAME_IDX'][distances < distance_threshold_to_roi])
+            frames.append((length/len(tracks[str(i)]['FRAME_IDX']))*100)
+        else:
+            frames.append(tracks[str(i)]['FRAME_IDX'][distances < distance_threshold_to_roi])
+    if percent == True:
+        time_in_roi = np.mean(frames)
+    else:
+        frames = np.concatenate(frames)
+        frames = frames[~np.isnan(frames)]
+        frames, counts = np.unique(frames,return_counts=True)
+        frame_idx = np.unique(np.concatenate(np.array([tracks[str(i)]['FRAME_IDX'] for i in tracks['IDENTITIES']])))
+        frames = frames[np.where(counts == len(tracks['IDENTITIES']))[0]]
+        time_in_roi = len(frames) / fps
+            
+    return time_in_roi
         
