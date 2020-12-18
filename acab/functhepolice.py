@@ -1270,7 +1270,6 @@ def rmv_out_pts(tracks, xmin=100, xmax=300, ymin=0, ymax=1000, absolute=True):
             continue
     return tracks
 
-
 def simple_filter(data, threshold=8, iterations=1):
     '''filter tracks by speed threshold and IF_outlier_removal()'''
     
@@ -1279,6 +1278,8 @@ def simple_filter(data, threshold=8, iterations=1):
                     'speed').any() == True) == False:
             data = get_speed(data)
         index = np.array(np.where((data['speed'] < threshold))[0])
+        if len(data['frame'][index]) < 1:
+            continue
         frame_idx = np.arange(data['frame'][index][0],
                               data['frame'][index][-1] + 1)
 
@@ -1291,7 +1292,6 @@ def simple_filter(data, threshold=8, iterations=1):
         data['frame'] = frame_idx
         data['frame'] = np.unique(data['frame']).astype(np.int)
     return data
-
 
 def IF_outlier_removal(data):
     '''Remove outliers using the IsolationForest algorithm.'''
