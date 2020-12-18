@@ -2856,11 +2856,12 @@ def get_time_to_roi(file,
             cy = id_tracks['cylinder_r']
             cx = id_tracks['cylinder_x']
             cr = id_tracks['cylinder_r']
-
+            frames = id_tracks['frame']
+            
             distances = np.sqrt((x - cx)**2 + (y - (cy))**2) / px2m
             boolean = np.where(distances <= distance_threshold_to_roi)[0]  
-            if len(boolean) > 0:
-                t = np.min(boolean)
+            if len(frames[boolean]) > 0:
+                t = np.min(frames[boolean])
             else:
                 t = np.inf
             if cr.any() < 0:
