@@ -1270,7 +1270,6 @@ def rmv_out_pts(tracks, xmin=100, xmax=300, ymin=0, ymax=1000, absolute=True):
             continue
     return tracks
 
-
 def simple_filter(data, threshold=8, iterations=1):
     '''filter tracks by speed threshold and IF_outlier_removal()'''
     
@@ -1279,6 +1278,8 @@ def simple_filter(data, threshold=8, iterations=1):
                     'speed').any() == True) == False:
             data = get_speed(data)
         index = np.array(np.where((data['speed'] < threshold))[0])
+        if len(data['frame'][index]) < 1:
+            continue
         frame_idx = np.arange(data['frame'][index][0],
                               data['frame'][index][-1] + 1)
 
@@ -1291,7 +1292,6 @@ def simple_filter(data, threshold=8, iterations=1):
         data['frame'] = frame_idx
         data['frame'] = np.unique(data['frame']).astype(np.int)
     return data
-
 
 def IF_outlier_removal(data):
     '''Remove outliers using the IsolationForest algorithm.'''
@@ -2591,35 +2591,52 @@ def trex2tracks(files, identities = np.arange(4), interpolate=True, start_idx = 
     Function also filter outliers by thresholding distance to center of arena and interpolate x,y'''
 
     tracks = {'IDENTITIES': identities}
-    
+    global_frame_idx = np.unique(np.concatenate([np.load(files[i])['frame'] for i in identities]))
+
     for i in identities:
         tracks[str(i)] = {}
         data = np.load(files[i])
-        index = np.where((data['frame'] >= start_idx) & (data['frame'] < end_idx))[0]
+        index = np.where((data['frame'] >= start_idx) & (data['frame'] < end_idx) & (np.isfinite(data['X']) == True))[0]
         distance = np.sqrt(
             np.power(data['X'][index] - 15, 2) + np.power(data['Y'][index] - 15, 2))
         if interpolate==True:
-            x_itpd, _ = interpolate_signal(data['X'][index][distance < threshold],
+            x, _ = interpolate_signal(data['X'][index][distance < threshold],
                                            data['frame'][index][distance < threshold])
-            y_itpd, frame_idx = interpolate_signal(data['Y'][index][distance < threshold],
+            y, id_frame_idx = interpolate_signal(data['Y'][index][distance < threshold],
                                                    data['frame'][index][distance < threshold])
-
-            tracks[str(i)]['X'] = np.array(x_itpd).astype(float)
-            tracks[str(i)]['Y'] = np.array(y_itpd).astype(float)
-        else:
-            tracks[str(i)]['X'] = np.array(data['X'][index][distance < threshold]).astype(float)
-            tracks[str(i)]['Y'] = np.array(data['Y'][index][distance < threshold]).astype(float)
             
-        tracks[str(i)]['SPEED'] = _speed(tracks[str(i)])
-        tracks[str(i)]['FRAME_IDX'] = np.array(frame_idx).astype(float)
-    tracks = _direction(tracks)
+        else:
+            x = np.array(data['X'][index][distance < threshold]).astype(float)
+            y = np.array(data['Y'][index][distance < threshold]).astype(float)
+            id_frame_idx = data['frame'][index][distance < threshold]
+            
+        valid_frames = np.isin(global_frame_idx, id_frame_idx)
+        invalid_frames = np.array(global_frame_idx[~valid_frames])
+        invalid_frames = invalid_frames[(invalid_frames >= start_idx) & (invalid_frames < end_idx)]
+        out = np.c_[[id_frame_idx,x,y],
+                        [invalid_frames,np.repeat(np.nan,len(invalid_frames)),
+                         np.repeat(np.nan,len(invalid_frames))]].T
+        out = out.reshape(-1,3)
+        out = out[np.argsort(out[:, 0])]
+
+        tracks[str(i)]['FRAME_IDX'] = out[:,0]
+        tracks[str(i)]['X'] = out[:,1]
+        tracks[str(i)]['Y'] = out[:,2]
+
+        for key in tracks[str(i)].keys():
+            tracks[str(i)][key] = np.array(tracks[str(i)][key]).astype(float)
+                
+        tracks[str(i)]['SPEED'] = get_speed(tracks[str(i)])
+        tracks[str(i)]['FRAME_IDX'] = np.array(id_frame_idx).astype(float)
+    tracks = get_direction(tracks)
     del data
-    
-    frame_idx = np.unique(np.concatenate([np.load(files[i])['frame'] for i in identities]))
-    index = np.where((frame_idx >= start_idx) & (frame_idx < end_idx))[0]
-    frame_idx = np.arange(np.min(frame_idx[index]),np.max(frame_idx[index]))
+
+    index = np.where((global_frame_idx >= start_idx) & (global_frame_idx < end_idx))[0]
+    frame_idx = np.arange(np.min(global_frame_idx[index]),np.max(global_frame_idx[index]))
     tracks['FRAME_IDX'] = frame_idx.astype(np.int32)
-    ret = np.array([[tracks[str(i)]['X'],tracks[str(i)]['Y']] for i in tracks['IDENTITIES']])
+    
+    ret = np.array([[tracks[str(i)]['X'],tracks[str(i)]['Y']] for i in tracks['IDENTITIES']], dtype=object)
+
     try:
         assert len(ret.shape) == 3
         ret = True
@@ -2629,6 +2646,7 @@ def trex2tracks(files, identities = np.arange(4), interpolate=True, start_idx = 
 #         print("No tracking data retrieved: \n", os.path.dirname(files[0]))
         ret = False
         return ret, tracks
+
     
 def check_corruption(files):
     '''check trex.run output files (.npz) for corruptions'''
@@ -2838,11 +2856,12 @@ def get_time_to_roi(file,
             cy = id_tracks['cylinder_r']
             cx = id_tracks['cylinder_x']
             cr = id_tracks['cylinder_r']
-
+            frames = id_tracks['frame']
+            
             distances = np.sqrt((x - cx)**2 + (y - (cy))**2) / px2m
             boolean = np.where(distances <= distance_threshold_to_roi)[0]  
-            if len(boolean) > 0:
-                t = np.min(boolean)
+            if len(frames[boolean]) > 0:
+                t = np.min(frames[boolean])
             else:
                 t = np.inf
             if cr.any() < 0:
@@ -2909,13 +2928,56 @@ def get_visits(file,
     return visits
 
 
-def ratio_expl_explt(tracks):
+def area_covered(tracks, distance_threshold=14, individual_radius=1, plot=False):
+    '''calculate area covered by group based on masking the arena with a circular mask of radius distance_threshold.
+    Individual coordinates are drawn with individual_radius and the amount of ones on the binary image are calculate
+    and compared to entire number of pixels within the mask.'''
+    
+    max_width = 30 ## depends on tracking approach
+    canvas = np.zeros((2040, 2046), np.uint8)
+    mask = np.zeros((2040, 2046), np.uint8)
+
+    for i in tracks['IDENTITIES']:
+        x = tracks[str(i)]['X'][np.isfinite(tracks[str(i)]['X'])]
+        y = tracks[str(i)]['Y'][np.isfinite(tracks[str(i)]['Y'])]
+        x_arr = (x / 30 * 0.997067449) * canvas.shape[0] 
+        y_arr = (y / 30) * canvas.shape[1] 
+        
+        pts = np.array([x_arr,y_arr]).reshape(2,len(x_arr)).T
+        pts = [tuple((int(p[0]),int(p[1]))) for p in pts]
+        for p in pts:
+            canvas = cv2.circle(canvas, p, individual_radius, (255,255,255), -1, cv2.LINE_AA) 
+
+    circle_x = int(0.5 * 0.997067449 * mask.shape[0])
+    circle_y = int(0.5*mask.shape[1])
+    r = (distance_threshold/max_width)*np.mean([mask.shape[0],mask.shape[1]])
+
+    cv2.circle(mask,(circle_x,circle_y),int(r), (255,255,255),-1,cv2.LINE_AA)
+
+    inv_mask = cv2.bitwise_not(mask)
+    out_img = canvas + 0.1 * inv_mask
+
+    area = len(canvas[canvas>0])
+    total_area = len(mask[mask>0])
+    
+    if plot == True:
+        fig, ax = plt.subplots(figsize=(10, 10))
+        ax.imshow(cv2.blur(out_img,(5,5),0), interpolation='none', origin='lower')
+        plt.text(30,30,str('area covered: ' + str(np.round(area/total_area*100)) + '%'),c=(1,1,1),fontsize=13)
+        plt.show()
+    
+    return (area/total_area)*100
+
+
+def ratio_explr_explt(tracks):
     '''Function to calculate ratio exploration/exploitation based on group speed and polarization.
     tracks are expected to be retrieved from trex.run output.'''
 
     speed = group_speed(tracks,smoothing_window = 5)
     polarization = group_polarization(tracks, smoothing_window = 5)
-
+    polarization = polarization[np.isfinite(polarization)]
+    speed = speed[np.isfinite(speed)]
+    
     polarization = savgol_filter(detrend(polarization),801,3)
     speed = savgol_filter(detrend(speed),801,3)
 
@@ -2950,47 +3012,8 @@ def ratio_expl_explt(tracks):
 
     exploration = means[0]
     exploitation = means[1]
-    ratio = 1/(exploration/exploitation)
-    return ratio
-
-def area_covered(tracks, distance_threshold=14, individual_radius=1, plot=False):
-    '''calculate area covered by group based on masking the arena with a circular mask of radius distance_threshold.
-    Individual coordinates are drawn with individual_radius and the amount of ones on the binary image are calculate
-    and compared to entire number of pixels within the mask.'''
     
-    max_width = 30 ## depends on tracking approach
-    canvas = np.zeros((2040, 2046), np.uint8)
-    mask = np.zeros((2040, 2046), np.uint8)
-
-    for i in tracks['IDENTITIES']:
-        x_arr = (tracks[str(i)]['X']/ 30 * 0.997067449) * canvas.shape[0] 
-        y_arr = (tracks[str(i)]['Y']/ 30) * canvas.shape[1] 
-
-        pts = np.array([x_arr,y_arr]).reshape(2,len(x_arr)).T
-        pts = [tuple((int(p[0]),int(p[1]))) for p in pts]
-        for p in pts:
-            canvas = cv2.circle(canvas, p, individual_radius, (255,255,255), -1, cv2.LINE_AA) 
-
-    circle_x = int(0.5 * 0.997067449 * mask.shape[0])
-    circle_y = int(0.5*mask.shape[1])
-    r = (distance_threshold/max_width)*np.mean([mask.shape[0],mask.shape[1]])
-
-    cv2.circle(mask,(circle_x,circle_y),int(r), (255,255,255),-1,cv2.LINE_AA)
-
-    inv_mask = cv2.bitwise_not(mask)
-    out_img = canvas + 0.1 * inv_mask
-
-    area = len(canvas[canvas>0])
-    total_area = len(mask[mask>0])
-    
-    if plot == True:
-        fig, ax = plt.subplots(figsize=(10, 10))
-        ax.imshow(cv2.blur(out_img,(5,5),0), interpolation='none', origin='lower')
-        plt.text(30,30,str('area covered: ' + str(np.round(area/total_area*100)) + '%'),c=(1,1,1),fontsize=13)
-        plt.show()
-    
-    return (area/total_area)*100
-
+    return exploration, exploitation
 
 
 def calc_xcorr(x, y, normed=True, maxlags=None):
@@ -3014,3 +3037,73 @@ def calc_xcorr(x, y, normed=True, maxlags=None):
 
     return lags, c
 
+
+def fraction_in_roi(tracks, 
+                    center = None, 
+                    threshold = 14,
+                    distance_threshold_to_roi = 0.08,
+                    fps = 20):
+    '''Calculate fraction of group that has entered the region of interest throughout the entire trial.'''
+    
+    if center is None:
+        center = (int(threshold/2), int(threshold/2))
+
+    area_inner_tank = 423112 ## px measured at bottom of tank
+    r = np.sqrt(area_inner_tank/np.pi)
+    px2cm = r/30
+    trex2px = 2046/30
+    
+    count = 0
+                    
+    for i in tracks['IDENTITIES']:
+        distances = np.sqrt(np.power(tracks[str(i)]['X'] - center[0],2) + np.power(tracks[str(i)]['Y'] - center[1],2))
+        distances = ((distances*trex2px)/(px2cm))/100 ## in meters
+        distances = distances[np.isfinite(distances)]
+        in_roi = distances[distances < distance_threshold_to_roi]
+        if len(in_roi)/fps > 1:
+                    count += 1
+    fraction = count/len(tracks['IDENTITIES'])
+                    
+    return fraction
+
+
+def group_time_in_roi(tracks, 
+                    center = None, 
+                    threshold = 14,
+                    distance_threshold_to_roi = 0.08,
+                    fps = 20,
+                    percent=False):
+    '''Calculate amount of time the group spends withing given radius of the region of interest throughout the entire trial.'''
+    
+    if center is None:
+        center = (int(threshold/2), int(threshold/2))
+
+    area_inner_tank = 423112 ## px measured at bottom of tank
+    r = np.sqrt(area_inner_tank/np.pi)
+    px2cm = r/30
+    trex2px = 2046/30
+    
+    count = 0
+    
+    frames = []
+    for i in tracks['IDENTITIES']:
+        distances = np.sqrt(np.power(tracks[str(i)]['X'] - center[0],2) + np.power(tracks[str(i)]['Y'] - center[1],2))
+        distances = ((distances*trex2px)/(px2cm))/100 ## in meters
+        distances = distances[np.isfinite(distances)]
+        if percent == True:
+            length = len(tracks[str(i)]['FRAME_IDX'][distances < distance_threshold_to_roi])
+            frames.append((length/len(tracks[str(i)]['FRAME_IDX']))*100)
+        else:
+            frames.append(tracks[str(i)]['FRAME_IDX'][distances < distance_threshold_to_roi])
+    if percent == True:
+        time_in_roi = np.mean(frames)
+    else:
+        frames = np.concatenate(frames)
+        frames = frames[~np.isnan(frames)]
+        frames, counts = np.unique(frames,return_counts=True)
+        frame_idx = np.unique(np.concatenate(np.array([tracks[str(i)]['FRAME_IDX'] for i in tracks['IDENTITIES']])))
+        frames = frames[np.where(counts == len(tracks['IDENTITIES']))[0]]
+        time_in_roi = len(frames) / fps
+            
+    return time_in_roi
+        
