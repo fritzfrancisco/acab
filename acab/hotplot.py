@@ -245,7 +245,7 @@ def yAxisOff(axs):
 
 def regressionPlot(x, y, bins=None, alpha=None, c=None,
                    xlab=None, ylab=None, s=None, polyfit=None,
-                   axs=None):
+                   axs=None, minDat=None):
     '''
     plot collection to estimate the relation between x and y
     . PLOT0            PLOT1           PLOT2
@@ -254,40 +254,58 @@ def regressionPlot(x, y, bins=None, alpha=None, c=None,
     .                bin data
     .             + regression
     '''
-    polyfit = jut.setDefault(polyfit, False)
+    polyfit = jut.setDefault(polyfit, 1)
     bins = jut.setDefault(bins, 40)
     alpha = jut.setDefault(alpha, 0.4)
     c = jut.setDefault(c, 'k')
     xlab = jut.setDefault(xlab, 'x')
     ylab = jut.setDefault(ylab, 'y')
     s = jut.setDefault(s, 6)
+    minDat = jut.setDefault(minDat, 20)
     axsWasNone = False
-    if axs is None or len(axs) != 3:
+    if axs is None:
         axsWasNone = True
-        f, axs = plt.subplots(1, 3, figsize=0.8*plt.figaspect(1/3.5), sharex=True)
+        f, axs = plt.subplots(1, 4, figsize=0.8*plt.figaspect(1/4.6), sharex=True)
     # plot: raw
     axs[0].scatter(x, y, c=c, alpha=alpha/4, s=s/3)
-    # plot: histogram + equally weighted bins
+    # plot: histogram
     histOut = axs[1].hist2d(x, y, bins=bins, cmap=cm.Reds)
-    xEqualPart, yEqualPart = jut.bin2d(x, y, bins=bins, func=np.mean, equalWeight=True)
-    _ = [ax.scatter(xEqualPart, yEqualPart, c=c, s=s, alpha=alpha) for ax in axs[1:]]
+    # plot equally weighted bins
+    [xEqualPart, yEqualPart,
+     weightsEP] = jut.bin2d(x, y, bins=bins, func=np.mean, equalWeight=True)
+    axs[2].scatter(xEqualPart, yEqualPart, c=c, s=s, alpha=alpha)
+    if len(axs) > 3:
+        # plot equidistant bins
+        [xEquiDistBins, yxEquiDistBins,
+         weightsEDB] = jut.bin2d(x, y, bins=bins, func=np.mean, equalWeight=False)
+        there = np.where(weightsEDB > minDat)[0]
+        ses = weightsEDB[there]
+        ses -= ses.min()
+        ses = ses * 5*s/ses.max() + s
+        axs[3].scatter(xEquiDistBins[there], yxEquiDistBins[there], c=c, s=ses,
+                       alpha=alpha, marker='^')
     # plot: regression or polyfit
-    if polyfit:
-        regr = np.polyfit(xEqualPart, yEqualPart, 3)
-        fit = np.poly1d(regr)
-    else:
-        regr = stats.linregress(x, y)
-        fit = lambda a : a*regr[0] + regr[1]
-    _ = [ax.plot(xEqualPart, fit(xEqualPart)) for ax in axs[1:]]
-    # fancy connections:
-    xes = [xEqualPart[0], xEqualPart[-1]]
-    for xe in xes:
-        pos = [xe, fit(xe)]
-        connectionPatch(axs[2], axs[1], pos, pos, linestyle='--', color='C0')
+    regr = None
+    if polyfit != False:
+        if polyfit > 1:
+            regr = np.polyfit(xEqualPart, yEqualPart, polyfit)
+            fit = np.poly1d(regr)
+        else:
+            regr = stats.linregress(x, y)
+            fit = lambda a : a*regr[0] + regr[1]
+        xes = [xEqualPart[0], xEqualPart[-1]]
+        xfit = np.arange(xes[0], xes[1], step=np.diff(xes)/100)
+        axs[2].plot(xfit, fit(xfit))
+    # # fancy connections:
+    # for xe in xes:
+    #     pos = [xe, fit(xe)]
+    #     connectionPatch(axs[2], axs[1], pos, pos, linestyle='--', color='C0')
     # labels, ticks and limits
-    shareYlimits(axs[:-1])
+    shareYlimits(axs[:2])
     axs[1].set_yticklabels([])
-    yAxisRight(axs[2])
+    [yAxisRight(ax) for ax in axs[2:]]
+    shareYlimits(axs[2:])
+    axs[-2].set_yticklabels([])
     axs[1].set_xlabel(xlab)
     _ = [ax.set_ylabel(ylab) for ax in [axs[0], axs[-1]]]
     if axsWasNone:

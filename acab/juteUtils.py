@@ -319,7 +319,7 @@ def labelSplitAndMerge(data, split=None, background=None):
 
 def bin2d(dat, dat2, bins=None, func=None, equalWeight=None):
     '''
-    similar to plt.hist2d but computes func(=mean, or median or ...) 
+    similar to plt.hist2d but computes func(=mean, or median or ...)
     for equally sized  bins BASED ON 'dat' (first input)
         if equalWeight=True: bins are equally space
     INPUT:
@@ -327,12 +327,11 @@ def bin2d(dat, dat2, bins=None, func=None, equalWeight=None):
         dat2
         bins
         func(array) -> float
-            function which transforms array of arbitrary shape -> float 
+            function which transforms array of arbitrary shape -> float
     OPTIONAL INPUT:
         equalWeight bool
             True: each bin contains same amount of data points
             False: equally distant bins, and therefore can vary in their data content
-            
     '''
     # DEFAULTS-START
     bins = setDefault(bins, int(len(dat)/2))
@@ -348,11 +347,13 @@ def bin2d(dat, dat2, bins=None, func=None, equalWeight=None):
     # output container
     dat_mean = np.empty(bins) * np.nan
     dat2_mean = np.empty(bins) * np.nan
+    Ndat = np.zeros(bins)
     for i, there in enumerate(indicesOfBin):
         if len(there) > 0:
             dat_mean[i] = func(dat[there])
             dat2_mean[i] = func(dat2[there])
-    return dat_mean, dat2_mean
+            Ndat[i] = len(there)
+    return dat_mean, dat2_mean, Ndat
 
 
 def Indices_EqualParts(data, Npart):
@@ -422,3 +423,12 @@ def angle_between_angles(phi0, phi1):
     return np.abs(angleBetween)
 
 
+def funcBetweenPercentiles(func, percentiles, dat):
+    '''
+    computes the function "func(dat_p1p2)" with
+    dat_p1p2 as all datapoints between the two
+    percentiles  (= "percentiles[0]", "percentiles[1]") of "dat"
+    '''
+    perc = np.percentile(dat, percentiles)
+    there = np.where((dat >= perc[0]) & (dat <= perc[1]))[0]
+    return func(dat[there])
