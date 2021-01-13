@@ -2351,6 +2351,7 @@ def get_incident(keys, value='2020-05-25'):
     return incident
 
 def get_instances(file,
+                  interpolate=False,
                   save=False,
                   plot=False,
                   distance_threshold_to_roi = 0.08,
@@ -2384,12 +2385,22 @@ def get_instances(file,
             id_tracks = tracks[str(int(i))]
             id_tracks = simple_filter(id_tracks, threshold=4)
             id_tracks = rmv_out_pts(id_tracks)
-
+            
             x = id_tracks['pos_x']
             y = id_tracks['pos_y']
             cx = id_tracks['cylinder_x']
             cy = id_tracks['cylinder_y']
             cr = id_tracks['cylinder_r']
+            
+            if interpolate == True:
+                x, _ = interpolate_signal(id_tracks['pos_x'],
+                            id_tracks['frame'])
+                y, id_frame_idx = interpolate_signal(id_tracks['pos_y'],
+                            id_tracks['frame'])
+                cx, _ = interpolate_signal(id_tracks['cylinder_x'],
+                            id_tracks['frame'])
+                cy, _ = interpolate_signal(id_tracks['cylinder_y'],
+                            id_tracks['frame'])
 
             if cr.any() < 0:
                 continue
