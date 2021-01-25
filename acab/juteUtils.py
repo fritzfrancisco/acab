@@ -342,7 +342,6 @@ def bin2d(dat, dat2, bins=None, func=None, equalWeight=None):
     dat = np.array(dat).flatten()
     dat2 = np.array(dat2).flatten()
     if equalWeight:
-        print('A1')
         indicesOfBin = Indices_EqualParts(dat, bins)
     else:
         indicesOfBin = Indices_EquidistantBins(dat, bins)
@@ -350,10 +349,8 @@ def bin2d(dat, dat2, bins=None, func=None, equalWeight=None):
     dat_mean = np.empty(bins) * np.nan
     dat2_mean = np.empty(bins) * np.nan
     Ndat = np.zeros(bins)
-    print('A3')
     for i, there in enumerate(indicesOfBin):
         if len(there) > 0:
-            print('A3: ', i, end='\r')
             dat_mean[i] = func(dat[there])
             dat2_mean[i] = func(dat2[there])
             Ndat[i] = len(there)
@@ -380,9 +377,7 @@ def Indices_EqualParts(data, Npart):
     there = np.where(data <= borders[0])[0]
     splitted_data.append(there)
     # all splits between first and last
-    print('A2')
     for i in range(0, len(borders)-1):
-        print('A2: ', i, end='\r')
         there = np.where((data > borders[i]) & (data <= borders[i+1]))[0]
         splitted_data.append(there)
     # last split
