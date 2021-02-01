@@ -5,6 +5,7 @@ from matplotlib.patches import ConnectionPatch
 import numpy as np
 from scipy import stats
 from acab import juteUtils as jut
+# import pdb
 
 def get_ABC(N, Nskip=None):
     Nskip = jut.setDefault(Nskip, 0)
@@ -312,3 +313,38 @@ def regressionPlot(x, y, bins=None, alpha=None, c=None,
         f.tight_layout()
         return regr, f, axs
     return regr
+
+
+def plot_set_xticks(axs, Nticks, values, noBox=None):
+    # if box or pcolor plot: the tick should be in the middle of box
+    if noBox is None:
+        noBox = False
+    values = np.array(values)
+    # assert Nticks <= len(values), 'Nticks > len(values)'
+    if Nticks > len(values):
+        Nticks = len(values)
+    if type(values[0]) != str:
+        ticks = np.linspace(0, len(values)-1, Nticks, dtype=int)
+        ticksID = ticks.copy()
+        if not noBox:
+            ticks = ticks.astype('float')
+            ticks += 0.5 
+        axs.set_xticks(ticks)
+        axs.set_xticklabels(np.round(values[ticksID], 2))
+    else:
+        axs.set_xticks(np.arange(Nticks) + 0.5)
+        axs.set_xticklabels(values, rotation='vertical')
+
+
+def plot_set_yticks(axs, Nticks, values):
+    # assert Nticks <= len(values), 'Nticks > len(values)'
+    if Nticks > len(values):
+        Nticks = len(values)
+    values = np.array(values)
+    if type(values[0]) != str:
+        ticks = np.linspace(0, len(values)-1, Nticks, dtype=int)
+        axs.set_yticks(ticks + 0.5)
+        axs.set_yticklabels(np.round(values[ticks], 2))
+    else:
+        axs.set_yticks(np.arange(Nticks) + 0.5)
+        axs.set_yticklabels(values)
