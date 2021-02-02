@@ -287,6 +287,46 @@ def concatenate_nb(str1, str2):
     out[len(str1):] = str2
     return out
 
+def get_speeds(file):
+    ''' 
+    Calculate speed based on x,y coordinates from .h5 files returned by track2h5().
+    output in form of dictionary
+    '''
+    speeds = {}
+    f = h5py.File(file, 'r')
+    keys = np.array(list(f.keys()))
+    name = file.replace('.h5', '')
+
+    for key in keys:
+        for i in np.unique(f[key][:, 3]):
+            speeds[str(int(i))] = {}
+    f.close()
+    identities = np.unique(np.array(list(speeds.keys())))
+
+    for j, key in enumerate(keys):
+        print(os.path.basename(name), np.round((j / len(keys)) * 100, 1), '%')
+        tracks = dictfromh5(file, j)
+
+         ## make sure trajectories for both IDs exists:
+        if (len(tracks.keys()) != 2) or (np.array([tracks[str(i)]['cylinder_x'] for i in tracks]).any() == -1):
+            continue
+
+        for i in identities:
+
+            id_tracks = tracks[str(int(i))]
+            id_tracks = simple_filter(id_tracks, threshold=4)
+            id_tracks = rmv_out_pts(id_tracks)
+
+            cr = id_tracks['cylinder_r']
+
+            if cr.any() < 0:
+                continue
+            else:
+                id_tracks = get_speed(id_tracks)
+                speeds[str(int(i))][key] = {
+                    'speed': id_tracks['speed'],
+                }
+    return speeds
 
 def get_speed(tracks):
     '''Function to calculate speed of individual for each frame from x- and y-coordinates.
