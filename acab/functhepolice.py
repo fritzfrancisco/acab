@@ -3215,3 +3215,34 @@ def smooth(x,window_len=5000,window='hamming'):
     y=np.convolve(w/w.sum(),s,mode='valid')
     return y
 
+def bearing(x, y, center_x, center_y):
+    '''function to calculate bearing between two points.'''
+    angle = np.degrees(np.arctan2(y - center_y, x - center_x))
+    bearing = (angle + 360) % 360
+    return bearing
+
+def angular_integral(x,y,center_x,center_y):
+    '''calculate angular integral/counts across all angles (x,y)
+    around center (center_x,center_y). 
+    Counts are therefore binned by 360 degrees'''
+    angular_counts = np.zeros(360)
+    xcentered = x-center_x #1024
+    ycentered = y-center_y #1015
+    bearings = np.round(gb(xcentered, ycentered, 0, 0),0)
+    for p in bearings:
+        angular_counts[int(p)] += 1
+    return bearings, angular_counts
+
+def radial_integral(x,y,center_x,center_y,r=None):
+    '''calculate mean occurrences of points (x,y) for given array of radii (r)
+    around center (center_x,center_y). All values should be given in pixel units.'''
+    xcentered = x-center_x
+    ycentered = y-center_y
+    distances = np.sqrt(np.square(xcentered - 0) + np.square(ycentered - 0))
+    bin_count = np.zeros(len(r))
+    for i,radius in enumerate(r):
+        if i == 0:
+            bin_count[i] = len(distances[distances <= radius])
+        else: 
+            bin_count[i] = len(distances[(r[i-1] < distances) & (distances <= radius)])
+    return bin_count
