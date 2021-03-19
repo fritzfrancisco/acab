@@ -3246,3 +3246,31 @@ def radial_integral(x,y,center_x,center_y,r=None):
         else: 
             bin_count[i] = len(distances[(r[i-1] < distances) & (distances <= radius)])
     return bin_count
+
+def combine_wavelets(wavelets, output_dir=None):
+    '''function to combine wavelets .h5 with same shape to single file'''
+    time_stamp = datetime.datetime.now().strftime("%Y-%m-%d-%H%M%S")
+    output_file = str(output_dir + 'combined_wavelets_%s.h5'%(time_stamp))
+
+    for w,wave in enumerate(wavelets):
+        with h5py.File(wave,'r') as f:
+            for i in f:
+                print(f[i].shape)
+                out = f[i]
+                out = np.concatenate([out,np.array(np.ones(out.shape[1])*w).reshape(1,out.shape[1])])
+                print(out.shape)
+                with h5py.File(output_file,'a') as o:
+                    if w == 0:
+                        o.create_dataset("100",
+                              data=out,
+                              shape=(out.shape),
+                              maxshape=(None,out.shape[1]),
+                              dtype='i',
+                              chunks=(10000, out.shape[1]),
+                              compression="gzip",
+                              compression_opts=9)
+                    else:
+                        ## write to .h5 file:
+                        o["100"].resize((o["100"].shape[0] + out.shape[0]), axis=0)
+                        o["100"][-out.shape[0]:] = out
+        del out
