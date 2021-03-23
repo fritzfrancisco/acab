@@ -2869,6 +2869,110 @@ def linreg(X, Y):
     return (Sxy * N - Sy * Sx)/det, (Sxx * Sy - Sx * Sxy)/det
 
 
+def get_social_distances(file,
+                  interpolate=False,
+                  save=False,
+                  plot=False,
+                  distance_threshold_to_roi = 0.05,
+                  px2m = None,
+                  output_dir='/home/fritz/Desktop/data_20200715/'):
+    '''Function to retrieve instances where xy coordinates are within a specified range.
+    In this case it is specifically designed for .h5 input retrieved through track2h5()
+    which contains cylinder coordinates and radii. 
+    These were collected using the find_cylinder() function.'''
+    
+    instances = {}
+    f = h5py.File(file, 'r')
+    keys = np.array(list(f.keys()))
+    name = file.replace('.h5', '')
+
+    for key in keys:
+        for i in np.unique(f[key][:, 3]):
+            instances[str(int(i))] = {}
+    f.close()
+    identities = np.unique(np.array(list(instances.keys())))
+    
+    for j, key in enumerate(keys):
+        print(os.path.basename(name), np.round((j / len(keys)) * 100, 1), '%')
+        tracks = dictfromh5(file, j)
+        
+         ## make sure trajectories for both IDs exists:
+        if (len(tracks.keys()) != 2) or (np.array([tracks[str(i)]['cylinder_x'] for i in tracks]).any() == -1):
+            continue
+            
+        for c,i in enumerate(identities):
+
+            id_tracks = tracks[str(int(i))]
+            id_tracks = simple_filter(id_tracks, threshold=4)
+            id_tracks = rmv_out_pts(id_tracks)
+            
+            x = id_tracks['pos_x']
+            y = id_tracks['pos_y']
+            cx = id_tracks['cylinder_x']
+            cy = id_tracks['cylinder_y']
+            cr = id_tracks['cylinder_r']
+            
+            if interpolate == True:
+                x, _ = interpolate_signal(id_tracks['pos_x'],
+                            id_tracks['frame'])
+                y, id_frame_idx = interpolate_signal(id_tracks['pos_y'],
+                            id_tracks['frame'])
+                cx, _ = interpolate_signal(id_tracks['cylinder_x'],
+                            id_tracks['frame'])
+                cy, _ = interpolate_signal(id_tracks['cylinder_y'],
+                            id_tracks['frame'])
+
+            if cr.any() < 0:
+                continue
+            else:
+                distances = np.sqrt((x - cx)**2 + (y - (cy))**2)
+                x2 = x
+                y2 = y
+                if c == 0:
+                    x1 = np.repeat(id_tracks['frame_width'],len(x))
+                    y1 = np.repeat(0,len(x))
+                    x0 = np.repeat(id_tracks['frame_width'],len(x))
+                    y0 = np.repeat(id_tracks['frame_height'],len(x))
+                if c == 1:
+                    x1 = np.repeat(0,len(x))
+                    y1 = np.repeat(0,len(x))
+                    x0 = np.repeat(0,len(x))
+                    y0 = np.repeat(id_tracks['frame_height'],len(x))
+                    
+                abs((x2-x1)*(y1-y0) - (x1-x0)*(y2-y1)) / np.sqrt(np.square(x2-x1) + np.square(y2-y1))
+                boolean = np.where(distances/px2m <= distance_threshold_to_roi)[0]
+                instances[str(int(i))][key] = {
+                    'distances': distances,
+                    'boolean': boolean
+                }
+            if plot == True:
+                fig, ax = plt.subplots()
+                circle = plt.Circle((int(cx), int(cy)),
+                                    int(cr),
+                                    color='r',
+                                    alpha=0.8)
+                ax.add_artist(circle)
+                ax.scatter(x, y, s=0.5)
+                ax.set_aspect('equal')
+                ax.set_axis_off()
+                plt.show()
+
+    if plot == True:
+        for i in instances.keys():
+            instance = []
+            for key in instances[str(i)].keys():
+                instance.append(len(instances[str(i)][key]['boolean']))
+            plt.plot(instance, label=str(i))
+        plt.legend()
+        plt.show()
+
+    if save == True:
+        outfile = os.path.basename(name).replace('tracks', 'instances')
+        outfile = str(output_dir + outfile)
+        np.save(outfile, instances)
+    return instances
+
+
 def get_time_to_roi(file,
                     distance_threshold_to_roi = 0.08,
                     px2m = 76/0.14):
@@ -3274,3 +3378,7 @@ def combine_wavelets(wavelets, output_dir=None):
                         o["100"].resize((o["100"].shape[0] + out.shape[0]), axis=0)
                         o["100"][-out.shape[0]:] = out
         del out
+        
+
+
+
