@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from functools import partial
 from pathlib import Path
-from skimage import measure
+# from skimage import measure
 import pdb
 
 
@@ -422,3 +422,32 @@ def angle_between_angles(phi0, phi1):
     return np.abs(angleBetween)
 
 
+def standardize(dat, minn=None, maxx=None):
+    if minn is None:
+        minn = np.min(dat)
+    if maxx is None:
+        maxx = np.max(dat)
+    dat -= minn
+    dat /= maxx - minn
+    return dat
+
+
+def treeDict(dic, level=0, name='', maxKeys=5):
+    '''
+    outputs the structure of nested dictionaries in a tree-like manner
+    '''
+    string0 = '  '*level + '-{}: '.format(name)
+    if type(dic) == dict:
+        ks = list(dic.keys())
+        if len(ks) > maxKeys:
+            string0 += 'Showing only {}[0] of total {} keys ({})'.format(name, len(ks), ks)
+            ks = [ks[0]]
+        print(string0, ks)
+        for k in ks:
+            treeDict(dic[k], level=level+1, name=k, maxKeys=maxKeys)
+    elif hasattr(dic, 'shape'):
+        print(string0, 'shape=', dic.shape)
+    elif type(dic) in [list, tuple]:
+        print(string0, 'length={}, {}[0]={}'.format(len(dic), name, dic[0]))
+    else:
+        print(string0, dic)
