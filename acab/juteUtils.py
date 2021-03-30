@@ -3,7 +3,11 @@ import matplotlib.pyplot as plt
 from functools import partial
 from pathlib import Path
 # from skimage import measure
+from scipy import ndimage
 import pdb
+import pandas as pd
+from numba import njit
+import shutil
 
 
 def setDefault(x, val):
@@ -319,7 +323,7 @@ def labelSplitAndMerge(data, split=None, background=None):
 
 def bin2d(dat, dat2, bins=None, func=None, equalWeight=None):
     '''
-    similar to plt.hist2d but computes func(=mean, or median or ...) 
+    similar to plt.hist2d but computes func(=mean, or median or ...)
     for equally sized  bins BASED ON 'dat' (first input)
         if equalWeight=True: bins are equally space
     INPUT:
@@ -327,20 +331,19 @@ def bin2d(dat, dat2, bins=None, func=None, equalWeight=None):
         dat2
         bins
         func(array) -> float
-            function which transforms array of arbitrary shape -> float 
+            function which transforms array of arbitrary shape -> float
     OPTIONAL INPUT:
         equalWeight bool
             True: each bin contains same amount of data points
             False: equally distant bins, and therefore can vary in their data content
-            
     '''
     # DEFAULTS-START
     bins = setDefault(bins, int(len(dat)/2))
     func = setDefault(func, np.nanmean)
     equalWeight = setDefault(equalWeight, False)
     # DEFAULTS-END
-    dat = np.array(dat)
-    dat2 = np.array(dat2)
+    dat = np.array(dat).flatten()
+    dat2 = np.array(dat2).flatten()
     if equalWeight:
         indicesOfBin = Indices_EqualParts(dat, bins)
     else:
@@ -348,11 +351,13 @@ def bin2d(dat, dat2, bins=None, func=None, equalWeight=None):
     # output container
     dat_mean = np.empty(bins) * np.nan
     dat2_mean = np.empty(bins) * np.nan
+    Ndat = np.zeros(bins)
     for i, there in enumerate(indicesOfBin):
         if len(there) > 0:
             dat_mean[i] = func(dat[there])
             dat2_mean[i] = func(dat2[there])
-    return dat_mean, dat2_mean
+            Ndat[i] = len(there)
+    return dat_mean, dat2_mean, Ndat
 
 
 def Indices_EqualParts(data, Npart):
@@ -422,6 +427,7 @@ def angle_between_angles(phi0, phi1):
     return np.abs(angleBetween)
 
 
+<<<<<<< HEAD
 def standardize(dat, minn=None, maxx=None):
     if minn is None:
         minn = np.min(dat)
@@ -451,3 +457,142 @@ def treeDict(dic, level=0, name='', maxKeys=5):
         print(string0, 'length={}, {}[0]={}'.format(len(dic), name, dic[0]))
     else:
         print(string0, dic)
+=======
+def funcBetweenPercentiles(func, percentiles, dat):
+    '''
+    computes the function "func(dat_p1p2)" with
+    dat_p1p2 as all datapoints between the two
+    percentiles  (= "percentiles[0]", "percentiles[1]") of "dat"
+    '''
+    perc = np.percentile(dat, percentiles)
+    there = np.where((dat >= perc[0]) & (dat <= perc[1]))[0]
+    return func(dat[there])
+
+
+def gaussian_filter_nans(U, sigma, order=0, output=None,
+                         mode='reflect', cval=0.0, truncate=4.0):
+    '''
+    applies scipy.ndimage.gaussian_filter but without
+    losing values due to Nans by applying "normalized convolution"
+    source:"https://stackoverflow.com/questions/18697532/gaussian-filtering-a-image-with-nan-in-python"
+    Better Explanation: "http://homepages.inf.ed.ac.uk/rbf/CVonline/LOCAL_COPIES/PIRODDI1/NormConv/node2.html#SECTION00020000000000000000"
+    Note: It is not strictly a "normalized convolution"
+            since we are discarding all resulting averages 
+            where NANs where fouund before
+          -> to make it proper "normalized convolution" out-comment "Z[np.isnan(U)] = 0"
+
+    INPUT:
+        same as for gaussian_filter
+    '''
+    gau_filter = partial(ndimage.gaussian_filter, order=order, output=output,
+                         mode=mode, cval=cval, truncate=truncate)
+    V = U.copy()
+    V[np.isnan(U)] = 0
+    VV = gau_filter(V, sigma)
+
+    W = 0 * U.copy() + 1
+    W[np.isnan(U)] = 0
+    WW = gau_filter(W, sigma)
+
+    Z = VV / WW
+    Z[np.isnan(U)] = 0
+    return Z
+
+
+def smooth2D(dat, std, min_periods=None, smotype=None):
+    assert len(dat.shape) == 2, 'data has wrong dimension' 
+    smodat = np.empty(dat.shape, dtype=float)
+    for i, da in enumerate(dat.T):
+        smodat[:, i] = smooth1D(da, std, min_periods=min_periods,
+                                smotype=smotype)
+    return smodat
+
+
+def smooth1D(dat, std=None, window=None, min_periods=None, smotype=None):
+    '''
+    INPUT:
+        dat.shape(T)
+        std double
+            - standard deviation of gaussian kernel used
+            - if window=None: int(6*std) = window size
+        window int
+            number of datapoints in a moving window
+        min_periods int
+            - minimum # of datapoints in window
+            - if less data than min_periods -> None
+        smotype string
+            up to now only 'gaussian' is implemented
+    '''
+    std = setDefault(std, 1)
+    window = setDefault(window, int(np.round(6*std)))
+    min_periods = setDefault(min_periods, 1)
+    smotype = setDefault(smotype, 'gaussian')
+    # use pandas to smooth
+    smodat = pd.Series(dat)
+    smodat = smodat.rolling(window=window, win_type=smotype,
+                            center=True, min_periods=int(np.round(min_periods))
+                           ).mean(std=std)
+    return smodat
+
+
+def copyIfNeeded(src, dst):
+    '''
+    copies file or directory to 'dst' if it does not exist
+    otherwise
+    do not copy
+    INPUT:
+        src str
+            file tobe copied
+        dst str
+            directory in which the file/dir to be copied
+    '''
+    p_src = Path(src)
+    p_dst = Path(dst) / p_src.parts[-1]
+    if not p_dst.exists():
+        if p_src.is_dir():
+            shutil.copytree( str(p_src), str(p_dst) )
+        elif p_src.is_file():
+            shutil.copy( str(p_src), str(dst) )
+
+
+def silentRemove(f_name):
+    '''
+    for deleting-review see: https://linuxize.com/post/python-delete-files-and-directories/
+    TODO:
+        if non-empty directory
+            shutil.rmtree
+            symbolic link = FALSE
+        if directory
+           pathlib.Path.rmdir
+            symbolic link = ????
+        if file
+           pathlib.Path.unlink
+            symbolic link = OK
+    '''
+    try:
+        os.remove(f_name)
+    except OSError as e:
+        if e.errno != errno.ENOENT:
+            raise
+
+
+def compareDicts(dic0, dic1, excludeTypes=None):
+    '''
+    compares the values of 2 different dictionaries and the keys
+    '''
+    excludeTypes = setDefault(excludeTypes, [])
+    k0 = np.array(list(dic0.keys()))
+    k1 = np.array(list(dic1.keys()))
+    k0in1 = np.in1d(k0, k1)
+    k1in0 = np.in1d(k0, k1)
+    if np.sum(~k0in1) > 0:
+        print('dic0-keys: {} are not in dic1'.format(k0[~k0in1]))
+    if np.sum(~k1in0) > 0:
+        print('dic1-keys: {} are not in dic0'.format(k1[~k1in0]))
+    checkKeys = k0[k0in1]
+    checkKeys.sort()
+    for k in checkKeys:
+        val0, val1 = dic0[k], dic1[k]
+        if type(val0) not in excludeTypes and val0 != val1:
+            print('conflict in {}: {} != {}'.format(k, val0, val1))
+>>>>>>> 902ff5de1c192fe16eec683e6f7e28a1ceb7e67d

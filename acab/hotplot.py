@@ -5,6 +5,7 @@ from matplotlib.patches import ConnectionPatch
 import numpy as np
 from scipy import stats
 from acab import juteUtils as jut
+# import pdb
 
 def get_ABC(N, Nskip=None):
     Nskip = jut.setDefault(Nskip, 0)
@@ -54,7 +55,7 @@ def abc_plotLabels(coord, axs, fontsize=None, Nskip=None, abc=None, **kwgs):
 def pcolor_zerowhite(f, axs, mat, xvals=None, yvals=None,
                      cmap=None, cLabel=None,
                      cbar=None, Nticks=None, maxVal=None,
-                     cbarHorizontal=None, **kwgs):
+                     cbarHorizontal=None, RedsAndBlues=False, **kwgs):
     '''
     creates a pcolormesh plot with bwr-colormap
     where white is exaclty at zero
@@ -85,11 +86,13 @@ def pcolor_zerowhite(f, axs, mat, xvals=None, yvals=None,
     elif mini >= 0:
         cmap = truncate_colormap(cmap, minval=0.5, maxval=1.0, n=500)
         c = axs.pcolormesh(mat, cmap=cmap, vmin=mini, vmax=maxVal)
-        # c = axs.pcolormesh(mat, cmap=cm.Reds) # old version
+        if RedsAndBlues:
+            c = axs.pcolormesh(mat, cmap=cm.Reds) # old version
     elif maxi <= 0:
         cmap = truncate_colormap(cmap, minval=0, maxval=0.5, n=500)
         c = axs.pcolormesh(mat, cmap=cmap, vmin=-maxVal, vmax=maxi)
-        # c = axs.pcolormesh(mat, cmap=cm.Blues_r) # old version
+        if RedsAndBlues:
+            c = axs.pcolormesh(mat, cmap=cm.Blues_r) # old version
     else:
         c = axs.pcolormesh(mat, cmap=cm.Greys)
     if xvals is not None:
@@ -245,7 +248,7 @@ def yAxisOff(axs):
 
 def regressionPlot(x, y, bins=None, alpha=None, c=None,
                    xlab=None, ylab=None, s=None, polyfit=None,
-                   axs=None):
+                   axs=None, minDat=None):
     '''
     plot collection to estimate the relation between x and y
     . PLOT0            PLOT1           PLOT2
@@ -254,43 +257,146 @@ def regressionPlot(x, y, bins=None, alpha=None, c=None,
     .                bin data
     .             + regression
     '''
-    polyfit = jut.setDefault(polyfit, False)
+    polyfit = jut.setDefault(polyfit, 1)
     bins = jut.setDefault(bins, 40)
     alpha = jut.setDefault(alpha, 0.4)
     c = jut.setDefault(c, 'k')
     xlab = jut.setDefault(xlab, 'x')
     ylab = jut.setDefault(ylab, 'y')
     s = jut.setDefault(s, 6)
+    minDat = jut.setDefault(minDat, 20)
     axsWasNone = False
-    if axs is None or len(axs) != 3:
+    if axs is None:
         axsWasNone = True
-        f, axs = plt.subplots(1, 3, figsize=0.8*plt.figaspect(1/3.5), sharex=True)
+        f, axs = plt.subplots(1, 4, figsize=0.8*plt.figaspect(1/4.6), sharex=True)
     # plot: raw
     axs[0].scatter(x, y, c=c, alpha=alpha/4, s=s/3)
-    # plot: histogram + equally weighted bins
+    # plot: histogram
     histOut = axs[1].hist2d(x, y, bins=bins, cmap=cm.Reds)
-    xEqualPart, yEqualPart = jut.bin2d(x, y, bins=bins, func=np.mean, equalWeight=True)
-    _ = [ax.scatter(xEqualPart, yEqualPart, c=c, s=s, alpha=alpha) for ax in axs[1:]]
+    # plot equally weighted bins
+    [xEqualPart, yEqualPart,
+     weightsEP] = jut.bin2d(x, y, bins=bins, func=np.mean, equalWeight=True)
+    axs[2].scatter(xEqualPart, yEqualPart, c=c, s=s, alpha=alpha)
+    if len(axs) > 3:
+        # plot equidistant bins
+        [xEquiDistBins, yxEquiDistBins,
+         weightsEDB] = jut.bin2d(x, y, bins=bins, func=np.mean, equalWeight=False)
+        there = np.where(weightsEDB > minDat)[0]
+        ses = weightsEDB[there]
+        ses -= ses.min()
+        ses = ses * 5*s/ses.max() + s
+        axs[3].scatter(xEquiDistBins[there], yxEquiDistBins[there], c=c, s=ses,
+                       alpha=alpha, marker='^')
     # plot: regression or polyfit
-    if polyfit:
-        regr = np.polyfit(xEqualPart, yEqualPart, 3)
-        fit = np.poly1d(regr)
-    else:
-        regr = stats.linregress(x, y)
-        fit = lambda a : a*regr[0] + regr[1]
-    _ = [ax.plot(xEqualPart, fit(xEqualPart)) for ax in axs[1:]]
-    # fancy connections:
-    xes = [xEqualPart[0], xEqualPart[-1]]
-    for xe in xes:
-        pos = [xe, fit(xe)]
-        connectionPatch(axs[2], axs[1], pos, pos, linestyle='--', color='C0')
+    regr = None
+    if polyfit != False:
+        if polyfit > 1:
+            regr = np.polyfit(xEqualPart, yEqualPart, polyfit)
+            fit = np.poly1d(regr)
+        else:
+            regr = stats.linregress(x, y)
+            fit = lambda a : a*regr[0] + regr[1]
+        xes = [xEqualPart[0], xEqualPart[-1]]
+        xfit = np.arange(xes[0], xes[1], step=np.diff(xes)/100)
+        axs[2].plot(xfit, fit(xfit))
+    # # fancy connections:
+    # for xe in xes:
+    #     pos = [xe, fit(xe)]
+    #     connectionPatch(axs[2], axs[1], pos, pos, linestyle='--', color='C0')
     # labels, ticks and limits
-    shareYlimits(axs[:-1])
+    shareYlimits(axs[:2])
     axs[1].set_yticklabels([])
-    yAxisRight(axs[2])
+    [yAxisRight(ax) for ax in axs[2:]]
+    shareYlimits(axs[2:])
+    axs[-2].set_yticklabels([])
     axs[1].set_xlabel(xlab)
     _ = [ax.set_ylabel(ylab) for ax in [axs[0], axs[-1]]]
     if axsWasNone:
         f.tight_layout()
         return regr, f, axs
     return regr
+
+
+def plot_set_xticks(axs, Nticks, values, noBox=None):
+    # if box or pcolor plot: the tick should be in the middle of box
+    if noBox is None:
+        noBox = False
+    values = np.array(values)
+    # assert Nticks <= len(values), 'Nticks > len(values)'
+    if Nticks > len(values):
+        Nticks = len(values)
+    if type(values[0]) != str:
+        ticks = np.linspace(0, len(values)-1, Nticks, dtype=int)
+        ticksID = ticks.copy()
+        if not noBox:
+            ticks = ticks.astype('float')
+            ticks += 0.5 
+        axs.set_xticks(ticks)
+        axs.set_xticklabels(np.round(values[ticksID], 2))
+    else:
+        axs.set_xticks(np.arange(Nticks) + 0.5)
+        axs.set_xticklabels(values, rotation='vertical')
+
+
+def plot_set_yticks(axs, Nticks, values):
+    # assert Nticks <= len(values), 'Nticks > len(values)'
+    if Nticks > len(values):
+        Nticks = len(values)
+    values = np.array(values)
+    if type(values[0]) != str:
+        ticks = np.linspace(0, len(values)-1, Nticks, dtype=int)
+        axs.set_yticks(ticks + 0.5)
+        axs.set_yticklabels(np.round(values[ticks], 2))
+    else:
+        axs.set_yticks(np.arange(Nticks) + 0.5)
+        axs.set_yticklabels(values)
+
+
+# extended list of linestyles, linestyletuples are created via (offset,(xpt line, xpt space, line, space, ...))
+lss = ['-', ':', '--', '-.',
+       (0, (5, 1, 1, 1, 1, 1)), # = -..-.. (dash double dots)
+       (0, (1, 1, 1, 4)), # = .. .. (double dots)
+       (0, (7, 2)), # = -- -- (long dashes)
+       (0, (1, 1, 1, 1, 1, 4)), # = ... ... (triple dots)
+       (0, (1, 1, 1, 1, 1, 1, 6, 1))] # = ...-...- (triple dots dash)
+
+
+def setRcParams(cycleLinestyles=None):
+    import matplotlib
+    if cycleLinestyles is None:
+        cycleLinestyles = False
+    if cycleLinestyles:
+        # color AND linestyle cycle for lines 
+        # However, cycler + cycler of different length shortens the longer one
+        from cycler import cycler
+        matplotlib.rcParams['axes.prop_cycle'] += cycler('linestyle', lss)
+    # make that only left and bottom spines are shown
+    matplotlib.rcParams['axes.spines.top'] = False
+    matplotlib.rcParams['axes.spines.right'] = False
+
+
+def axesGrid(N, size=None, aspect=None, flatten=None):
+    '''
+    returns
+    INPUT:
+        aspect float
+            changes the aspect of each axis
+            e.g.: 0.5: |__
+                  2: |
+                     |_
+        flatten bool
+            Default=True
+            True: returns axs.flatten()[:N]
+            False: returns axs-array
+    '''
+    size = jut.setDefault(size, 0.8)
+    aspect = jut.setDefault(aspect, 1)
+    flatten = jut.setDefault(flatten, False)
+    
+    m = int(np.sqrt(N))
+    n = m + int((m - np.sqrt(N)) < 0)
+    m += int((n * m - N) < 0)
+    f, axs = plt.subplots(m, n, figsize=m*0.8*plt.figaspect(m/n * aspect))
+    if flatten:
+        axs = axs.flatten()[:N]
+    return axs
