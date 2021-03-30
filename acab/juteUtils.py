@@ -3,11 +3,12 @@ import matplotlib.pyplot as plt
 from functools import partial
 from pathlib import Path
 # from skimage import measure
-from scipy import ndimage
+
 import pdb
 import pandas as pd
-from numba import njit
+# from numba import njit
 import shutil
+from numpy.linalg import lstsq
 
 
 def setDefault(x, val):
@@ -427,7 +428,6 @@ def angle_between_angles(phi0, phi1):
     return np.abs(angleBetween)
 
 
-<<<<<<< HEAD
 def standardize(dat, minn=None, maxx=None):
     if minn is None:
         minn = np.min(dat)
@@ -457,7 +457,8 @@ def treeDict(dic, level=0, name='', maxKeys=5):
         print(string0, 'length={}, {}[0]={}'.format(len(dic), name, dic[0]))
     else:
         print(string0, dic)
-=======
+
+
 def funcBetweenPercentiles(func, percentiles, dat):
     '''
     computes the function "func(dat_p1p2)" with
@@ -595,4 +596,68 @@ def compareDicts(dic0, dic1, excludeTypes=None):
         val0, val1 = dic0[k], dic1[k]
         if type(val0) not in excludeTypes and val0 != val1:
             print('conflict in {}: {} != {}'.format(k, val0, val1))
->>>>>>> 902ff5de1c192fe16eec683e6f7e28a1ceb7e67d
+
+def SegmentedLinearReg(X, Y, breakpoints):
+    '''
+    piecewise regression, or segmented regression which tunes the breakpoints
+    -> if you know the breakpoint and want not change it -> do not use
+    INPUT:
+        X
+    Example:
+        import matplotlib.pyplot as plt
+        
+        X = np.linspace( 0, 10, 27 )
+        Y = 0.2*X  - 0.3* ramp(X-2) + 0.3*ramp(X-6) + 0.05*np.random.randn(len(X))
+        plt.plot( X, Y, 'ok' );
+        
+        initialBreakpoints = [1, 7]
+        plt.plot( *SegmentedLinearReg( X, Y, initialBreakpoints ), '-r' );
+        plt.xlabel('X'); plt.ylabel('Y');
+
+    BASED ON 
+        [1]: Muggeo, V. M. (2003). Estimating regression models with unknown breakpoints. Statistics in medicine, 22(19), 3055-3071.
+
+    COPIED FROM
+        https://datascience.stackexchange.com/questions/8457/python-library-for-segmented-regression-a-k-a-piecewise-regression
+    '''
+    nIterationMax = 10
+
+    ramp = lambda u: np.maximum( u, 0 )
+    step = lambda u: ( u > 0 ).astype(float)
+
+    breakpoints = np.sort( np.array(breakpoints) )
+
+    dt = np.min( np.diff(X) )
+    ones = np.ones_like(X)
+
+    for i in range( nIterationMax ):
+        # Linear regression:  solve A*p = Y
+        Rk = [ramp( X - xk ) for xk in breakpoints ]
+        Sk = [step( X - xk ) for xk in breakpoints ]
+        A = np.array([ ones, X ] + Rk + Sk )
+        p =  lstsq(A.transpose(), Y, rcond=None)[0] 
+
+        # Parameters identification:
+        a, b = p[0:2]
+        ck = p[ 2:2+len(breakpoints) ]
+        dk = p[ 2+len(breakpoints): ]
+
+        # Estimation of the next break-points:
+        newBreakpoints = breakpoints - dk/ck 
+
+        # Stop condition
+        if np.max(np.abs(newBreakpoints - breakpoints)) < dt/5:
+            break
+
+        breakpoints = newBreakpoints
+    else:
+        print( 'maximum iteration reached' )
+
+    # Compute the final segmented fit:
+    Xsolution = np.insert( np.append( breakpoints, max(X) ), 0, min(X) )
+    ones =  np.ones_like(Xsolution) 
+    Rk = [ c*ramp( Xsolution - x0 ) for x0, c in zip(breakpoints, ck) ]
+
+    Ysolution = a*ones + b*Xsolution + np.sum( Rk, axis=0 )
+
+    return Xsolution, Ysolution
