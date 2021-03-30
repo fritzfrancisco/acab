@@ -55,7 +55,7 @@ def abc_plotLabels(coord, axs, fontsize=None, Nskip=None, abc=None, **kwgs):
 def pcolor_zerowhite(f, axs, mat, xvals=None, yvals=None,
                      cmap=None, cLabel=None,
                      cbar=None, Nticks=None, maxVal=None,
-                     cbarHorizontal=None, **kwgs):
+                     cbarHorizontal=None, RedsAndBlues=False, **kwgs):
     '''
     creates a pcolormesh plot with bwr-colormap
     where white is exaclty at zero
@@ -86,11 +86,13 @@ def pcolor_zerowhite(f, axs, mat, xvals=None, yvals=None,
     elif mini >= 0:
         cmap = truncate_colormap(cmap, minval=0.5, maxval=1.0, n=500)
         c = axs.pcolormesh(mat, cmap=cmap, vmin=mini, vmax=maxVal)
-        # c = axs.pcolormesh(mat, cmap=cm.Reds) # old version
+        if RedsAndBlues:
+            c = axs.pcolormesh(mat, cmap=cm.Reds) # old version
     elif maxi <= 0:
         cmap = truncate_colormap(cmap, minval=0, maxval=0.5, n=500)
         c = axs.pcolormesh(mat, cmap=cmap, vmin=-maxVal, vmax=maxi)
-        # c = axs.pcolormesh(mat, cmap=cm.Blues_r) # old version
+        if RedsAndBlues:
+            c = axs.pcolormesh(mat, cmap=cm.Blues_r) # old version
     else:
         c = axs.pcolormesh(mat, cmap=cm.Greys)
     if xvals is not None:
@@ -348,3 +350,53 @@ def plot_set_yticks(axs, Nticks, values):
     else:
         axs.set_yticks(np.arange(Nticks) + 0.5)
         axs.set_yticklabels(values)
+
+
+# extended list of linestyles, linestyletuples are created via (offset,(xpt line, xpt space, line, space, ...))
+lss = ['-', ':', '--', '-.',
+       (0, (5, 1, 1, 1, 1, 1)), # = -..-.. (dash double dots)
+       (0, (1, 1, 1, 4)), # = .. .. (double dots)
+       (0, (7, 2)), # = -- -- (long dashes)
+       (0, (1, 1, 1, 1, 1, 4)), # = ... ... (triple dots)
+       (0, (1, 1, 1, 1, 1, 1, 6, 1))] # = ...-...- (triple dots dash)
+
+
+def setRcParams(cycleLinestyles=None):
+    import matplotlib
+    if cycleLinestyles is None:
+        cycleLinestyles = False
+    if cycleLinestyles:
+        # color AND linestyle cycle for lines 
+        # However, cycler + cycler of different length shortens the longer one
+        from cycler import cycler
+        matplotlib.rcParams['axes.prop_cycle'] += cycler('linestyle', lss)
+    # make that only left and bottom spines are shown
+    matplotlib.rcParams['axes.spines.top'] = False
+    matplotlib.rcParams['axes.spines.right'] = False
+
+
+def axesGrid(N, size=None, aspect=None, flatten=None):
+    '''
+    returns
+    INPUT:
+        aspect float
+            changes the aspect of each axis
+            e.g.: 0.5: |__
+                  2: |
+                     |_
+        flatten bool
+            Default=True
+            True: returns axs.flatten()[:N]
+            False: returns axs-array
+    '''
+    size = jut.setDefault(size, 0.8)
+    aspect = jut.setDefault(aspect, 1)
+    flatten = jut.setDefault(flatten, False)
+    
+    m = int(np.sqrt(N))
+    n = m + int((m - np.sqrt(N)) < 0)
+    m += int((n * m - N) < 0)
+    f, axs = plt.subplots(m, n, figsize=m*0.8*plt.figaspect(m/n * aspect))
+    if flatten:
+        axs = axs.flatten()[:N]
+    return axs
