@@ -287,6 +287,46 @@ def concatenate_nb(str1, str2):
     out[len(str1):] = str2
     return out
 
+def get_speeds(file):
+    ''' 
+    Calculate speed based on x,y coordinates from .h5 files returned by track2h5().
+    output in form of dictionary
+    '''
+    speeds = {}
+    f = h5py.File(file, 'r')
+    keys = np.array(list(f.keys()))
+    name = file.replace('.h5', '')
+
+    for key in keys:
+        for i in np.unique(f[key][:, 3]):
+            speeds[str(int(i))] = {}
+    f.close()
+    identities = np.unique(np.array(list(speeds.keys())))
+
+    for j, key in enumerate(keys):
+        print(os.path.basename(name), np.round((j / len(keys)) * 100, 1), '%')
+        tracks = dictfromh5(file, j)
+
+         ## make sure trajectories for both IDs exists:
+        if (len(tracks.keys()) != 2) or (np.array([tracks[str(i)]['cylinder_x'] for i in tracks]).any() == -1):
+            continue
+
+        for i in identities:
+
+            id_tracks = tracks[str(int(i))]
+            id_tracks = simple_filter(id_tracks, threshold=4)
+            id_tracks = rmv_out_pts(id_tracks)
+
+            cr = id_tracks['cylinder_r']
+
+            if cr.any() < 0:
+                continue
+            else:
+                id_tracks = get_speed(id_tracks)
+                speeds[str(int(i))][key] = {
+                    'speed': id_tracks['speed'],
+                }
+    return speeds
 
 def get_speed(tracks):
     '''Function to calculate speed of individual for each frame from x- and y-coordinates.
@@ -2829,6 +2869,110 @@ def linreg(X, Y):
     return (Sxy * N - Sy * Sx)/det, (Sxx * Sy - Sx * Sxy)/det
 
 
+def get_social_distances(file,
+                  interpolate=False,
+                  save=False,
+                  plot=False,
+                  distance_threshold_to_roi = 0.05,
+                  px2m = None,
+                  output_dir='/home/fritz/Desktop/data_20200715/'):
+    '''Function to retrieve instances where xy coordinates are within a specified range.
+    In this case it is specifically designed for .h5 input retrieved through track2h5()
+    which contains cylinder coordinates and radii. 
+    These were collected using the find_cylinder() function.'''
+    
+    instances = {}
+    f = h5py.File(file, 'r')
+    keys = np.array(list(f.keys()))
+    name = file.replace('.h5', '')
+
+    for key in keys:
+        for i in np.unique(f[key][:, 3]):
+            instances[str(int(i))] = {}
+    f.close()
+    identities = np.unique(np.array(list(instances.keys())))
+    
+    for j, key in enumerate(keys):
+        print(os.path.basename(name), np.round((j / len(keys)) * 100, 1), '%')
+        tracks = dictfromh5(file, j)
+        
+         ## make sure trajectories for both IDs exists:
+        if (len(tracks.keys()) != 2) or (np.array([tracks[str(i)]['cylinder_x'] for i in tracks]).any() == -1):
+            continue
+            
+        for c,i in enumerate(identities):
+
+            id_tracks = tracks[str(int(i))]
+            id_tracks = simple_filter(id_tracks, threshold=4)
+            id_tracks = rmv_out_pts(id_tracks)
+            
+            x = id_tracks['pos_x']
+            y = id_tracks['pos_y']
+            cx = id_tracks['cylinder_x']
+            cy = id_tracks['cylinder_y']
+            cr = id_tracks['cylinder_r']
+            
+            if interpolate == True:
+                x, _ = interpolate_signal(id_tracks['pos_x'],
+                            id_tracks['frame'])
+                y, id_frame_idx = interpolate_signal(id_tracks['pos_y'],
+                            id_tracks['frame'])
+                cx, _ = interpolate_signal(id_tracks['cylinder_x'],
+                            id_tracks['frame'])
+                cy, _ = interpolate_signal(id_tracks['cylinder_y'],
+                            id_tracks['frame'])
+
+            if cr.any() < 0:
+                continue
+            else:
+                distances = np.sqrt((x - cx)**2 + (y - (cy))**2)
+                x2 = x
+                y2 = y
+                if c == 0:
+                    x1 = np.repeat(id_tracks['frame_width'],len(x))
+                    y1 = np.repeat(0,len(x))
+                    x0 = np.repeat(id_tracks['frame_width'],len(x))
+                    y0 = np.repeat(id_tracks['frame_height'],len(x))
+                if c == 1:
+                    x1 = np.repeat(0,len(x))
+                    y1 = np.repeat(0,len(x))
+                    x0 = np.repeat(0,len(x))
+                    y0 = np.repeat(id_tracks['frame_height'],len(x))
+                    
+                abs((x2-x1)*(y1-y0) - (x1-x0)*(y2-y1)) / np.sqrt(np.square(x2-x1) + np.square(y2-y1))
+                boolean = np.where(distances/px2m <= distance_threshold_to_roi)[0]
+                instances[str(int(i))][key] = {
+                    'distances': distances,
+                    'boolean': boolean
+                }
+            if plot == True:
+                fig, ax = plt.subplots()
+                circle = plt.Circle((int(cx), int(cy)),
+                                    int(cr),
+                                    color='r',
+                                    alpha=0.8)
+                ax.add_artist(circle)
+                ax.scatter(x, y, s=0.5)
+                ax.set_aspect('equal')
+                ax.set_axis_off()
+                plt.show()
+
+    if plot == True:
+        for i in instances.keys():
+            instance = []
+            for key in instances[str(i)].keys():
+                instance.append(len(instances[str(i)][key]['boolean']))
+            plt.plot(instance, label=str(i))
+        plt.legend()
+        plt.show()
+
+    if save == True:
+        outfile = os.path.basename(name).replace('tracks', 'instances')
+        outfile = str(output_dir + outfile)
+        np.save(outfile, instances)
+    return instances
+
+
 def get_time_to_roi(file,
                     distance_threshold_to_roi = 0.08,
                     px2m = 76/0.14):
@@ -3117,4 +3261,124 @@ def group_time_in_roi(tracks,
         time_in_roi = len(frames) / fps
             
     return time_in_roi
+
+def smooth(x,window_len=5000,window='hamming'):
+    """smooth the data using a window with requested size.
+    
+    This method is based on the convolution of a scaled window with the signal.
+    The signal is prepared by introducing reflected copies of the signal 
+    (with the window size) in both ends so that transient parts are minimized
+    in the begining and end part of the output signal.
+    
+    input:
+        x: the input signal 
+        window_len: the dimension of the smoothing window; should be an odd integer
+        window: the type of window from 'flat', 'hanning', 'hamming', 'bartlett', 'blackman'
+            flat window will produce a moving average smoothing.
+
+    output:
+        the smoothed signal
         
+    example:
+
+    t=linspace(-2,2,0.1)
+    x=sin(t)+randn(len(t))*0.1
+    y=smooth(x)
+    
+    see also: 
+    
+    numpy.hanning, numpy.hamming, numpy.bartlett, numpy.blackman, numpy.convolve
+    scipy.signal.lfilter
+ 
+    TODO: the window parameter could be the window itself if an array instead of a string
+    NOTE: length(output) != length(input), to correct this: return y[(window_len/2-1):-(window_len/2)] instead of just y.
+    """
+
+    if x.ndim != 1:
+        raise ValueError("smooth only accepts 1 dimension arrays.")
+
+    if x.size < window_len:
+        raise ValueError("Input vector needs to be bigger than window size.")
+
+
+    if window_len<3:
+        return x
+
+
+    if not window in ['flat', 'hanning', 'hamming', 'bartlett', 'blackman']:
+        raise ValueError("Window is on of 'flat', 'hanning', 'hamming', 'bartlett', 'blackman'")
+
+
+    s=np.r_[x[window_len-1:0:-1],x,x[-2:-window_len-1:-1]]
+    #print(len(s))
+    if window == 'flat': #moving average
+        w=np.ones(window_len,'d')
+    else:
+        w=eval('np.'+window+'(window_len)')
+
+    y=np.convolve(w/w.sum(),s,mode='valid')
+    return y
+
+def bearing(x, y, center_x, center_y):
+    '''function to calculate bearing between two points.'''
+    angle = np.degrees(np.arctan2(y - center_y, x - center_x))
+    bearing = (angle + 360) % 360
+    return bearing
+
+def angular_integral(x,y,center_x,center_y):
+    '''calculate angular integral/counts across all angles (x,y)
+    around center (center_x,center_y). 
+    Counts are therefore binned by 360 degrees'''
+    angular_counts = np.zeros(360)
+    xcentered = x-center_x #1024
+    ycentered = y-center_y #1015
+    bearings = np.round(gb(xcentered, ycentered, 0, 0),0)
+    for p in bearings:
+        angular_counts[int(p)] += 1
+    return bearings, angular_counts
+
+def radial_integral(x,y,center_x,center_y,r=None):
+    '''calculate mean occurrences of points (x,y) for given array of radii (r)
+    around center (center_x,center_y). All values should be given in pixel units.'''
+    xcentered = x-center_x
+    ycentered = y-center_y
+    distances = np.sqrt(np.square(xcentered - 0) + np.square(ycentered - 0))
+    bin_count = np.zeros(len(r))
+    for i,radius in enumerate(r):
+        if i == 0:
+            bin_count[i] = len(distances[distances <= radius])
+        else: 
+            bin_count[i] = len(distances[(r[i-1] < distances) & (distances <= radius)])
+    return bin_count
+
+def combine_wavelets(wavelets, output_dir=None):
+    '''function to combine wavelets .h5 with same shape to single file'''
+    time_stamp = datetime.datetime.now().strftime("%Y-%m-%d-%H%M%S")
+    output_file = str(output_dir + 'combined_wavelets_%s.h5'%(time_stamp))
+
+    for w,wave in enumerate(wavelets):
+        with h5py.File(wave,'r') as f:
+            for i in f:
+                print(f[i].shape)
+                out = f[i]
+                out = np.concatenate([out,np.array(np.ones(out.shape[1])*w).reshape(1,out.shape[1])])
+                print(out.shape)
+                with h5py.File(output_file,'a') as o:
+                    if w == 0:
+                        o.create_dataset("100",
+                              data=out,
+                              shape=(out.shape),
+                              maxshape=(None,out.shape[1]),
+                              dtype='i',
+                              chunks=(10000, out.shape[1]),
+                              compression="gzip",
+                              compression_opts=9)
+                    else:
+                        ## write to .h5 file:
+                        o["100"].resize((o["100"].shape[0] + out.shape[0]), axis=0)
+                        o["100"][-out.shape[0]:] = out
+        del out
+        
+
+
+
