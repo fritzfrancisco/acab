@@ -3028,6 +3028,9 @@ def get_time_to_roi(file,
     return ttroi
 
 
+def consecutive(data, stepsize=1):
+    return np.split(data, np.where(np.diff(data) != stepsize)[0]+1)
+
 def get_visits(file,
                distance_threshold_to_roi = 0.08,
                px2m = 76/0.14):
@@ -3035,7 +3038,7 @@ def get_visits(file,
     In this case it is specifically designed for .h5 input retrieved through track2h5()
     which contains cylinder coordinates and radii. 
     These were collected using the find_cylinder() function.'''
-    
+
     visits = {}
     f = h5py.File(file, 'r')
     keys = np.array(list(f.keys()))
@@ -3068,8 +3071,10 @@ def get_visits(file,
             cr = id_tracks['cylinder_r']
 
             distances = np.sqrt((x - cx)**2 + (y - cy)**2) / px2m
-            boolean = np.where(distances <= distance_threshold_to_roi)[0]  
-            in_out = np.where(np.array([distances[o-1] for o in boolean if (o > np.min(id_tracks['frame'])-1) & (o <= np.max(id_tracks['frame']))])>= distance_threshold_to_roi)[0]
+            boolean = np.where(distances <= distance_threshold_to_roi)[0]
+            in_out = consecutive(np.where(distances < distance_threshold_to_roi)[0])
+
+            #in_out = np.where(np.array([distances[o-1] for o in boolean if (o > np.min(id_tracks['frame'])-1) & (o <= np.max(id_tracks['frame']))])>= distance_threshold_to_roi)[0]
             if len(in_out) > 0:
                 count = len(in_out)
             else:
@@ -3081,7 +3086,6 @@ def get_visits(file,
                     'visits': count,
                 }
     return visits
-
 
 def area_covered(tracks, distance_threshold=14, individual_radius=1, plot=False):
     '''calculate area covered by group based on masking the arena with a circular mask of radius distance_threshold.
