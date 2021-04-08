@@ -3074,16 +3074,18 @@ def get_visits(file,
             boolean = np.where(distances <= distance_threshold_to_roi)[0]
             in_out = consecutive(np.where(distances < distance_threshold_to_roi)[0])
 
-            #in_out = np.where(np.array([distances[o-1] for o in boolean if (o > np.min(id_tracks['frame'])-1) & (o <= np.max(id_tracks['frame']))])>= distance_threshold_to_roi)[0]
-            if len(in_out) > 0:
+            if np.array(in_out,dtype=object).size != 0:
+                duration = np.nanmean(np.array([len(visit) for visit in in_out]))
                 count = len(in_out)
             else:
                 count = 0
+                duration = 0
             if cr.any() < 0:
                 continue
             else:
                 visits[str(int(i))][key] = {
                     'visits': count,
+                    'duration': duration,
                 }
     return visits
 
