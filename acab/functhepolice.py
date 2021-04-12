@@ -3384,7 +3384,17 @@ def combine_wavelets(wavelets, output_dir=None):
                         o["100"].resize((o["100"].shape[0] + out.shape[0]), axis=0)
                         o["100"][-out.shape[0]:] = out
         del out
-        
 
-
+def get_orientations(data):
+    '''Function to calculate inclination and azimuth from x,y,z'''
+    x = data['pos_x']
+    y = data['pos_y']
+    z = data['pos_z']
+    frame = data['frame']
+    vx = np.array([(x[i+1]-x[i])/(frame[i+1]-f) for i , f in frame]) 
+    vy = np.array([(y[i+1]-y[i])/(frame[i+1]-f) for i , f in frame]) 
+    vz = np.array([(z[i+1]-z[i])/(frame[i+1]-f) for i , f in frame]) 
+    inclination = np.arctan2(np.sqrt(vx**2 + vy**2)/vz)
+    azimuth = np.arctan2(vy,vx)
+    return azimuth, inclination
 
