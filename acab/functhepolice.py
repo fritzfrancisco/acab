@@ -3097,9 +3097,10 @@ def get_visits(input_file,
 
                 visits[str(int(i))][key] = {
                     'visits': count,
-                    'duration': duration,
+                    'mean_duration': duration,
                     'entry_frames': entry_frames,
-                    'exit_frames': exit_frames
+                    'exit_frames': exit_frames,
+                    'durations': in_out
                 }
     return visits
 
@@ -3613,7 +3614,7 @@ def combined_visits_to_roi(h5_lists, run_list=None,
                 t = 0
                 for i, test in enumerate(sorted(data.keys())):
                     v = data[test]['visits']
-                    duration = data[test]['duration']
+                    duration = data[test]['mean_duration']
                     
                     ## create test number
                     day = test[test.find('-')-4:test.find('-')+6]
