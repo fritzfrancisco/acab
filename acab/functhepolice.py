@@ -3412,3 +3412,221 @@ def get_orientations(data):
     azimuth = np.arctan2(vy,vx)
     return azimuth, inclination
 
+def combined_time_in_roi(h5_lists, px2m=None,
+                         run_list=None, distance_threshold_to_roi=None,
+                         fps=None):
+    gc.collect()
+    time_in_roi = []
+    for h5_files in h5_lists:
+        run = []
+        for file in h5_files:
+            run = np.append(run, os.path.basename(file)[6:8].replace('_',''))
+        r = int(np.unique(run))
+
+        with Pool(len(h5_files)) as p:
+            a = p.map(partial(get_instances,
+                              px2m=px2m,
+                              distance_threshold_to_roi=distance_threshold_to_roi),
+                      h5_files)
+        p.close()
+
+        for tank in a:
+            for individual in tank.keys():
+                ## define partner ID:
+                pair = np.array(list(tank.keys()))
+                partner = int(pair[pair!=str(individual)])
+                
+                data = tank[individual]
+                prev = None
+                days = np.unique(np.array([t[t.find('-')-4:t.find('-')+6] for t in data]))
+                t = 0
+                for i, test in enumerate(sorted(data.keys())):
+                    in_roi = np.where(data[test]['distances']/px2m < distance_threshold_to_roi)[0]
+
+                    ## create test number
+                    day = test[test.find('-')-4:test.find('-')+6]
+                    t = int(np.where(days==day)[0])
+                        
+                    ## create treatment indicator
+                    if np.isin(int(individual),trained_lists[run_list.index(r)]):
+                        trained = 1
+                    else:
+                        trained = 0
+
+                    out = np.array([r, t, i, individual, trained, partner, int(len(in_roi)/fps)]).astype(int)
+                    time_in_roi = np.append(time_in_roi, out)
+        time_in_roi = time_in_roi.reshape(-1, len(out)).astype(int)
+    del out, day, t, data, pair, partner
+    return time_in_roi
+
+def combined_social_time(h5_lists, px2m=None,
+                         run_list=None, fps=None,
+                         distance_threshold_to_roi=None):
+    gc.collect()
+    social_time = []
+    for h5_files in h5_lists:
+        run = []
+        for file in h5_files:
+            run = np.append(run, os.path.basename(file)[6:8].replace('_',''))
+        r = int(np.unique(run))
+
+        with Pool(len(h5_files)) as p:
+            a = p.map(partial(get_social_distances,
+                              px2m=px2m,
+                              distance_threshold_to_roi=distance_threshold_to_roi),
+                      h5_files)
+        p.close()
+
+        for tank in a:
+            for individual in tank.keys():
+                data = tank[individual]
+                prev = None
+                days = np.unique(np.array([t[t.find('-')-4:t.find('-')+6] for t in data]))
+                t = 0
+                for i, test in enumerate(sorted(data.keys())):
+                    in_roi = np.where(data[test]['distances']/px2m < distance_threshold_to_roi)[0]
+
+                    ## create test number
+                    day = test[test.find('-')-4:test.find('-')+6]
+                    t = int(np.where(days==day)[0])
+
+                    ## create treatment indicator
+                    if np.isin(int(individual),trained_lists[run_list.index(r)]):
+                        trained = 1
+                    else:
+                        trained = 0
+
+                    out = np.array([r, t, i, individual, trained, int(len(in_roi)/fps)]).astype(int)
+                    social_time = np.append(social_time, out)
+        social_time = social_time.reshape(-1, len(out)).astype(int)
+    del out, day, t, in_roi
+    return social_time
+
+def combined_speed(h5_lists, px2m=None,
+                   fps=None, run_list=None):
+    gc.collect()
+    speeds = []
+    for h5_files in h5_lists:
+        run = []
+        for file in h5_files:
+            run = np.append(run, os.path.basename(file)[6:8].replace('_',''))
+        r = int(np.unique(run))
+
+        with Pool(len(h5_files)) as p:
+            a = p.map(get_speeds, h5_files)
+        p.close()
+
+        for tank in a:
+            for individual in tank.keys():
+                data = tank[individual]
+                prev = None
+                days = np.unique(np.array([t[t.find('-')-4:t.find('-')+6] for t in data]))
+                t = 0
+                for i, test in enumerate(sorted(data.keys())):
+                    speed = np.nanmean(data[test]['speed'])/px2m*fps # convert to m/s
+
+                    ## create test number
+                    day = test[test.find('-')-4:test.find('-')+6]
+                    t = int(np.where(days==day)[0])
+                        
+                    ## create treatment indicator
+                    if np.isin(int(individual),trained_lists[run_list.index(r)]):
+                        trained = 1
+                    else:
+                        trained = 0
+
+                    out = np.array([r, t, i, individual, trained, speed])
+                    speeds = np.append(speeds, out)
+        speeds = speeds.reshape(-1, len(out)).astype(float)
+    del out, day, t, speed, data
+    return speeds
+
+def combined_time_to_roi(h5_lists, run_list=None,
+                         distance_threshold_to_roi=None, fps=None,
+                         px2m=None):
+    gc.collect()
+    ttroi = []
+    for r, h5_files in enumerate(h5_lists):
+        run = []
+        for file in h5_files:
+            run = np.append(run, os.path.basename(file)[6:8].replace('_',''))
+        r = int(np.unique(run))
+
+        with Pool(len(h5_files)) as p:
+            a = p.map(partial(get_time_to_roi, distance_threshold_to_roi=distance_threshold_to_roi,
+                              px2m=px2m), h5_files)
+        p.close()
+
+        for tank in a:
+            for individual in tank.keys():
+                data = tank[individual]
+                prev = None
+                days = np.unique(np.array([t[t.find('-')-4:t.find('-')+6] for t in data]))
+                t = 0
+                for i, test in enumerate(sorted(data.keys())):
+                    to = data[test]['time_to_roi']
+
+                    ## create test number
+                    day = test[test.find('-')-4:test.find('-')+6]
+                    t = int(np.where(days==day)[0])
+                    
+                    ## create treatment indicator
+                    if np.isin(int(individual),trained_lists[run_list.index(r)]):
+                        trained = 1
+                    else:
+                        trained = 0
+
+                    if to == np.inf:
+                        out = np.array([r, t, i, individual, trained, int(-1)])
+                    else:
+                        out = np.array([r, t, i, individual, trained, int(to/fps)])
+
+                    ttroi = np.append(ttroi, out)
+        ttroi = ttroi.reshape(-1, len(out))
+    del out, day, t, to, data
+    return ttroi
+
+
+def combined_visits_to_roi(h5_lists, run_list=None,
+                         distance_threshold_to_roi=None, fps=None,
+                         px2m=None):
+    gc.collect()
+    visits = []
+    for r, h5_files in enumerate(h5_lists):
+        run = []
+        for file in h5_files:
+            run = np.append(run, os.path.basename(file)[6:8].replace('_',''))
+        r = int(np.unique(run))
+        
+        with Pool(len(h5_files)) as p:
+            a = p.map(partial(get_visits, 
+                              distance_threshold_to_roi = distance_threshold_to_roi,
+                              px2m = px2m,
+                              fps = fps), h5_files)
+        p.close()
+
+        for tank in a:
+            for individual in tank.keys():
+                data = tank[individual]
+                prev = None
+                days = np.unique(np.array([t[t.find('-')-4:t.find('-')+6] for t in data]))
+                t = 0
+                for i, test in enumerate(sorted(data.keys())):
+                    v = data[test]['visits']
+                    duration = data[test]['duration']
+                    
+                    ## create test number
+                    day = test[test.find('-')-4:test.find('-')+6]
+                    t = int(np.where(days==day)[0])
+
+                    ## create treatment indicator
+                    if np.isin(int(individual),trained_lists[run_list.index(r)]):
+                        trained = 1
+                    else:
+                        trained = 0
+
+                    out = np.array([r, t, i, individual, trained, int(duration), int(v)]).astype(float)
+                    visits = np.append(visits, out)
+        visits = visits.reshape(-1, len(out)).astype(float)
+    del out, day, t, v, duration
+    return visits
