@@ -3631,3 +3631,122 @@ def combined_visits_to_roi(h5_lists, run_list=None,
         visits = visits.reshape(-1, len(out)).astype(float)
     del out, day, t, v, duration
     return visits
+
+def decay_filter(input_array, gamma = 0.02):
+    """
+    Filter to make discrete data into continous data.
+    gamma: dampening factor
+    """
+    prev = None
+    out = []
+    for i in np.arange(len(input_array)):
+        if i == 0:
+            out = np.append(out, 0)
+            prev = 0
+        else:
+            out = np.append(out,(1-gamma)*prev+input_array[i])
+            prev = (1-gamma)*prev+input_array[i]
+    return out
+
+def partial_shuffle(x, d):
+    """
+    Function for shuffling data while keeping a fraction unshuffled.
+    x: data to shuffle
+    d: fraction of data to leave unshuffled
+    """
+    n = len(x)
+    dn = int(d*n)
+    indices = list(range(n))
+    random.shuffle(indices)
+    ind_fixed, ind_shuff = indices[dn:], indices[:dn]
+
+    # copy across the fixed values
+    result = x[:]
+
+    # shuffle the shuffled values
+    for src, dest in zip(ind_shuff, sorted(ind_shuff)):
+        result[dest] = x[src]
+
+    return result
+
+def binned_correspondence(x,y,binsize=10):
+    """
+    Function to count events in y corresponding to x within a time window.
+    binsize: time window size
+    """
+    x_out = []
+    y_out = []
+    for i in range(len(x)): 
+        sig = y[i:i+binsize]
+        sig = sig[sig==1]
+        x_out = np.append(x_out,np.sum(sig))
+    for i in range(len(y)): 
+        sig = x[i:i+binsize]
+        sig = sig[sig==1]
+        y_out = np.append(y_out,np.sum(sig))
+    return [x_out,y_out]
+
+def pairwise_lf(x,y,fps=1):
+    '''calculate pairwise lags to past and future events
+    fps: frame rate of signal'''
+    x_future = []
+    y_future = []
+    x_past = []
+    y_past = []
+    xi = np.where(x==1)[0]
+    yi = np.where(y==1)[0]
+  
+    for i in xi:
+        step_count = 0
+        ref = 0
+        while (ref == 0) and ((i+step_count) < len(y)):
+            if (i+step_count) < len(y):
+                ref = y[i+step_count]
+                step_count += 1
+            else:
+                ref = 1
+        x_future = np.append(x_future,step_count/fps)
+        
+    for i in yi:
+        step_count = 0
+        ref = 0
+        while (ref == 0) and ((i+step_count) < len(x)):
+            if (i+step_count) < len(x):
+                ref = x[i+step_count]
+                step_count += 1
+            else:
+                ref = 1
+        y_future = np.append(y_future,step_count/fps)
+        
+    for i in xi:
+        step_count = 0
+        ref = 0
+        while (ref == 0) and ((i-step_count) > 0):
+            if (i-step_count) > 0:
+                ref = y[i-step_count]
+                step_count += 1
+            else:
+                ref = 1
+        x_past = np.append(x_past,-step_count/fps)
+        
+    for i in yi:
+        step_count = 0
+        ref = 0
+        while (ref == 0) and ((i-step_count) > 0):
+            if (i-step_count) > 0:
+                ref = x[i-step_count]
+                step_count += 1
+            else:
+                ref = 1
+        y_past = np.append(y_past,-step_count/fps)
+    return [x_future, y_future, x_past, y_past]
+
+def pad(A, length, value=0):
+    """
+    Padding function to pad A to length with given value.
+    length: length to which to pad
+    value: value to use for padding
+    """
+    arr = np.zeros(length)*value
+    arr[:len(A)] = A
+    return arr
