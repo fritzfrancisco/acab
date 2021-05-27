@@ -3695,50 +3695,70 @@ def pairwise_lf(x,y,fps=1):
     y_past = []
     xi = np.where(x==1)[0]
     yi = np.where(y==1)[0]
-  
+
     for i in xi:
         step_count = 0
         ref = 0
-        while (ref == 0) and ((i+step_count) < len(y)):
+        while (ref == 0):
             if (i+step_count) < len(y):
                 ref = y[i+step_count]
                 step_count += 1
+            elif (i+step_count) == len(y):
+                ref = np.nan
             else:
                 ref = 1
-        x_future = np.append(x_future,step_count/fps)
-        
+        if np.isnan(ref)==True:
+            x_future = np.append(x_future,np.inf)
+        else:
+            x_future = np.append(x_future,step_count/fps)
+
     for i in yi:
         step_count = 0
         ref = 0
-        while (ref == 0) and ((i+step_count) < len(x)):
+        while (ref == 0):
             if (i+step_count) < len(x):
                 ref = x[i+step_count]
                 step_count += 1
+            elif (i+step_count) == len(x):
+                ref = np.nan
             else:
-                ref = 1
-        y_future = np.append(y_future,step_count/fps)
-        
+                ref = 0
+        if np.isnan(ref)==True:
+            y_future = np.append(y_future,np.inf)
+        else:
+            y_future = np.append(y_future,step_count/fps)
+
     for i in xi:
         step_count = 0
         ref = 0
-        while (ref == 0) and ((i-step_count) > 0):
+        while (ref == 0):
             if (i-step_count) > 0:
                 ref = y[i-step_count]
                 step_count += 1
+            elif ((i-step_count) == 0):
+                ref = np.nan
             else:
-                ref = 1
-        x_past = np.append(x_past,-step_count/fps)
-        
+                ref = 0
+        if np.isnan(ref)==True:
+            x_past = np.append(x_past,-np.inf)
+        else:
+            x_past = np.append(x_past,-step_count/fps)
+
     for i in yi:
         step_count = 0
         ref = 0
-        while (ref == 0) and ((i-step_count) > 0):
+        while (ref == 0):
             if (i-step_count) > 0:
                 ref = x[i-step_count]
                 step_count += 1
+            elif ((i-step_count) == 0):
+                ref = np.nan
             else:
-                ref = 1
-        y_past = np.append(y_past,-step_count/fps)
+                ref = 0
+        if np.isnan(ref)==True:
+            y_past = np.append(y_past,-np.inf)
+        else:
+            y_past = np.append(y_past,-step_count/fps)
     return [x_future, y_future, x_past, y_past]
 
 def pad(A, length, value=0):
