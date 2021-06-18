@@ -3770,3 +3770,60 @@ def pad(A, length, value=0):
     arr = np.zeros(length)*value
     arr[:len(A)] = A
     return arr
+
+def get_boundary(input_file, number_of_samples=100, show=False):
+    '''find tank boundary of round tank 
+    based on water level or other round features'''
+    
+    cap = cv2.VideoCapture(input_file)
+    ret, frame = cap.read()
+    cv2.namedWindow('frame',cv2.WINDOW_NORMAL)
+    frame_idx = 0 
+    sampled_circles = []
+
+    while True:
+        ret, frame = cap.read()
+        if ret == True:
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            blur = cv2.GaussianBlur(gray,(11,11),0)
+            thresh = cv2.adaptiveThreshold(blur,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C,\
+                        cv2.THRESH_BINARY,57,2)
+            circles = cv2.HoughCircles(thresh, cv2.HOUGH_GRADIENT,
+                                       1, 100, param1=100, param2=37,
+                                       minRadius=1500, maxRadius=1600)
+
+            # ensure at least some circles were found
+            if circles is not None:
+                # convert the (x, y) coordinates and radius of the circles to integers
+                circles = np.round(circles[0, :]).astype("int")
+                # loop over the (x, y) coordinates and radius of the circles
+                for (x, y, r) in circles:
+                    sampled_circles = np.append(sampled_circles,[x,y,r])
+                    # draw the circle in the output image, then draw a rectangle
+                    # corresponding to the center of the circle
+                    cv2.circle(frame, (x, y), r, (0, 255, 0), 4)
+                    cv2.rectangle(frame, (x - 5, y - 5), (x + 5, y + 5), (0, 128, 255), -1)
+            
+            if len(sampled_circles)/3 >= number_of_samples:
+                break
+            else:
+                print(len(sampled_circles)/3)
+            
+            if show == True:
+                # show the output image
+                cv2.imshow("frame", frame)
+
+                # Press Q on keyboard to  exit
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    break
+
+            frame_idx += 1
+        else:
+            break
+    if show == True:
+        cv2.destroyAllWindows()
+    cap.release()
+    
+    sampled_circles = np.array(sampled_circles).reshape(-1,3)
+    sampled_circles = sampled_circles.mean(axis=0)
+    return sampled_circles
