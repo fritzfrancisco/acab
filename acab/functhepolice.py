@@ -3827,3 +3827,10 @@ def get_boundary(input_file, number_of_samples=100, show=False):
     sampled_circles = np.array(sampled_circles).reshape(-1,3)
     sampled_circles = sampled_circles.mean(axis=0)
     return sampled_circles
+
+
+def get_cmap(n, name='hsv'):
+    '''Returns a function that maps each index in 0, 1, ..., n-1 to a distinct 
+    RGB color; the keyword argument name must be a standard mpl colormap name.'''
+    return plt.cm.get_cmap(name, n)
+
