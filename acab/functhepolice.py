@@ -3828,7 +3828,6 @@ def get_boundary(input_file, number_of_samples=100, show=False):
     sampled_circles = sampled_circles.mean(axis=0)
     return sampled_circles
 
-
 def get_cmap(n, name='hsv'):
     '''Returns a function that maps each index in 0, 1, ..., n-1 to a distinct 
     RGB color; the keyword argument name must be a standard mpl colormap name.'''
@@ -3855,3 +3854,54 @@ def pool_trex_tracks(individual_track_files):
     tracks_pooled = np.concatenate(tracks) 
     tracks_pooled = tracks_pooled[np.argsort(tracks_pooled[:, 0])]
     return tracks_pooled
+
+def bearing_from_mask(mask):
+    '''Function to calculate bearing from binary mask and 
+    calculated by using the first to principal componend of it.
+    Bearing is defined as having 0 in the North position'''
+    
+    def gb(x, y, center_x, center_y):
+        '''actual function to calculate bearing.'''
+        angle = np.degrees(np.arctan2(y - center_y, x - center_x))
+        bearing = (angle + 360) % 360
+        return bearing
+
+    mask = np.float32(mask)
+    mask = np.array(mask*255).astype('uint8')
+
+    y, x = np.nonzero(mask)
+
+    x = x - np.mean(x)
+    y = y - np.mean(y)
+    coords = np.vstack([x, y])
+
+    cov = np.cov(coords)
+    evals, evecs = np.linalg.eig(cov)
+
+    sort_indices = np.argsort(evals)[::-1]
+    x_v1, y_v1 = evecs[:, sort_indices[0]]  # Eigenvector with largest eigenvalue
+    x_v2, y_v2 = evecs[:, sort_indices[1]]
+
+    scale = 10
+    pts = np.array([[p[0],p[1]] for p in coords.T])
+    p1 = np.asarray([x_v1*-scale*2,y_v1*-scale*2])
+    p2 = np.asarray([x_v1*scale*2, y_v1*scale*2])
+    p4 = np.asarray([x_v2*-scale*2,y_v2*-scale*2])
+    p5 = np.asarray([x_v2*scale*2, y_v2*scale*2])
+
+    dist = []
+    pos = []
+    for p3 in pts:
+        d = np.mean(np.abs(np.cross(p2-p1, p1-np.asarray(p3)))/np.linalg.norm(p2-p1))
+        position = np.sign((p5[0] - p4[0]) * (p3[1] - p4[1]) - (p5[1] - p4[1]) * (p3[0] - p4[0]))
+        pos = np.append(pos,position)
+        dist = np.append(dist,d)
+
+    lr_ratio = np.sum(dist[pos > 0])/np.sum(dist[pos < 0])  # left-right ratio
+    if lr_ratio > 0:
+        side = 1
+    else:
+        side = -1
+
+    bearing = gb(x_v1*np.sign(side)*5,y_v1*np.sign(side)*5,0,0)
+    return bearing
