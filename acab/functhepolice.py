@@ -3834,3 +3834,24 @@ def get_cmap(n, name='hsv'):
     RGB color; the keyword argument name must be a standard mpl colormap name.'''
     return plt.cm.get_cmap(name, n)
 
+def pool_trex_tracks(individual_track_files):
+    '''Pool individual tracks (trex.run output) by combining all input files into a single output.
+    Output is sorted by frame number and the column names are ['FRAME','X','Y','ANGLE'] '''
+    frames = []
+    tracks = []
+    count = 0
+    for i,track in enumerate(individual_track_files):
+        data = np.load(track,allow_pickle=True)
+        
+        tracks.append(np.c_[data['frame'], 
+                            data['X#wcentroid'], 
+                            data['Y#wcentroid'],
+                            data['ANGLE'],
+                           np.repeat(i,len(data['frame']))])        
+        frames = np.append(frames, data['frame'])
+        count += 1
+        del data
+    frames = np.unique(frames)
+    tracks_pooled = np.concatenate(tracks) 
+    tracks_pooled = tracks_pooled[np.argsort(tracks_pooled[:, 0])]
+    return tracks_pooled
