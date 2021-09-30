@@ -3905,3 +3905,122 @@ def bearing_from_mask(mask):
 
     bearing = gb(x_v1*np.sign(side)*5,y_v1*np.sign(side)*5,0,0)
     return bearing
+
+def read_settings(settings_file, centered_blobs=False):
+    ''' read settings from trex.run .settings file and create dictionary of values '''
+    settings_db = {}
+    settings = pd.read_csv(settings_file, delimiter="\t", header=None)
+    labels = [row[0].split(' ')[0] for i, row in settings.iterrows()]
+
+    for label in labels:
+        index = int(np.where(np.isin(labels, str(label)) == True)[0])
+        value = settings.iloc[index, 0].split(' ')[2]
+        if np.isin(
+                np.array([
+                    'cm_per_pixel', 'approximate_length_minutes',
+                    'average_samples', 'color_channel', 'gui_interface_scale',
+                    'max_speed', 'threshold', 'track_max_individuals',
+                    'track_max_speed'
+                ]), label).any() == True:
+            value = float(value)
+        if 'track_include' == label:
+            objects = value[2:-2].split(']]')
+            objects = np.array([
+                np.array(re.findall(r'\b\d+\b', obj)).reshape(
+                    -1, 2).astype(int) for obj in objects
+            ]) * cm_per_pixed
+            if centered_blobs == True:
+                objects[:, :, 0] = objects[:, :, 0] - np.mean(objects[:, :, 0])
+                objects[:, :, 1] = objects[:, :, 1] - np.mean(objects[:, :, 1])
+            value = objects
+        if np.isin(
+                np.array([
+                    'correct_lumincance', 'enable_live_recording',
+                    'output_centered', 'output_posture_data'
+                ]), label).any() == True:
+            value = bool(value)
+        if 'blob_size_ranges' == label:
+            arr = value[2:-2].split(',')
+            value = np.array([float(i) for i in arr])
+        settings_db[str(label)] = value
+    return settings_db
+
+def label_trex_identities(input_tracks,
+                          settings_file=None,
+                          from_pooled=False,
+                          print_faulty_percentage=True,
+                          plot=True):
+    ''' Create identity labels for trex.run output based on polygons defined by the flag  .setting file.
+    Expects an array of input file containing one tracked output per individual. 
+    If the flag `from_pooled`==True a pooled object as created with pool_trex_tracks() can be given as input '''
+    settings_db = read_settings(settings_file, centered_blobs=True)
+    if from_pooled == False:
+        pooled_tracks = pool_trex_tracks(input_tracks)
+
+    id_mask = np.ones(len(pooled_tracks)) * np.nan
+    for i, obj in enumerate(settings_db['track_include']):
+        p = Polygon(obj, facecolor='k', alpha=0.1)
+        poly = mplPath.Path(obj)
+        index = [
+            poly.contains_point(point)
+            for point in zip(pooled_tracks[:, 1], pooled_tracks[:, 2])
+        ]
+        arc = np.arctan2(np.mean(obj[:, 0]), np.mean(obj[:, 1])) * 180 / np.pi
+        if -90 < arc < 0:
+            identity = 0
+        if 90 > arc > 0:
+            identity = 1
+        if -90 > arc:
+            identity = 2
+        if arc > 90:
+            identity = 3
+        id_mask[index] = identity
+
+    labeled_tracks = np.c_[pooled_tracks, id_mask]
+
+    if plot == True:
+        fig, ax = plt.subplots(figsize=(10, 10))
+
+        for i, obj in enumerate(settings_db['track_include']):
+            plt.scatter(obj[:, 0], obj[:, 1], s=0.5, c='k')
+            p = Polygon(obj, facecolor='k', alpha=0.05)
+            poly = mplPath.Path(obj)
+            ax.add_patch(p)
+            index = [
+                poly.contains_point(point)
+                for point in zip(pooled_tracks[:, 1], pooled_tracks[:, 2])
+            ]
+            arc = np.arctan2(np.mean(obj[:, 0]), np.mean(obj[:,
+                                                             1])) * 180 / np.pi
+            if -90 < arc < 0:
+                identity = 0
+            if 90 > arc > 0:
+                identity = 1
+            if -90 > arc:
+                identity = 2
+            if arc > 90:
+                identity = 3
+            plt.scatter(np.mean(obj[:, 0]),
+                        np.mean(obj[:, 1]),
+                        s=30,
+                        color='k')
+            plt.text(np.mean(obj[:, 0]), np.mean(obj[:, 1]), identity, size=20)
+
+        plt.scatter(labeled_tracks[:, 1],
+                    labeled_tracks[:, 2],
+                    c=labeled_tracks[:, 5],
+                    s=0.1)
+        plt.axis('equal')
+        plt.show()
+
+    if print_faulty_percentage == True:
+        print(
+            "Percentage of faulty data: ",
+            np.round(
+                len(labeled_df['CORRECTED_ID']
+                    [~np.isfinite(labeled_df['CORRECTED_ID'])]) /
+                len(labeled_df['CORRECTED_ID']), 2), '%')
+
+    out = pd.DataFrame(labeled_tracks)
+    out.columns = ['FRAME', 'X', 'Y', 'ANGLE', 'TREX_ID', 'CORRECTED_ID']
+    return out
