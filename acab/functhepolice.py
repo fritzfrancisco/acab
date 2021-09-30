@@ -43,7 +43,7 @@ from sklearn.preprocessing import scale
 import matplotlib.pylab as plt
 import matplotlib.backends.backend_pdf
 import matplotlib as mpl
-
+from matplotlib.patches import Polygon
 
 def kl_divergence(p, q):
     '''calculate Kullback-Leibler Divergence between two distributions'''
@@ -3835,23 +3835,22 @@ def get_cmap(n, name='hsv'):
 
 def pool_trex_tracks(individual_track_files):
     '''Pool individual tracks (trex.run output) by combining all input files into a single output.
-    Output is sorted by frame number and the column names are ['FRAME','X','Y','ANGLE','ID'] '''
+    Output is sorted by frame number and the column names are ['FRAME','X','Y','ANGLE','SPEED','ID'] '''
     frames = []
     tracks = []
     count = 0
-    for i,track in enumerate(individual_track_files):
-        data = np.load(track,allow_pickle=True)
-        
-        tracks.append(np.c_[data['frame'], 
-                            data['X#wcentroid'], 
-                            data['Y#wcentroid'],
-                            data['ANGLE'],
-                           np.repeat(i,len(data['frame']))])        
+    for i, track in enumerate(individual_track_files):
+        data = np.load(track, allow_pickle=True)
+
+        tracks.append(np.c_[data['frame'], data['X#wcentroid'],
+                            data['Y#wcentroid'], data['ANGLE'],
+                            data['SPEED#wcentroid'],
+                            np.repeat(i, len(data['frame']))])
         frames = np.append(frames, data['frame'])
         count += 1
         del data
     frames = np.unique(frames)
-    tracks_pooled = np.concatenate(tracks) 
+    tracks_pooled = np.concatenate(tracks)
     tracks_pooled = tracks_pooled[np.argsort(tracks_pooled[:, 0])]
     return tracks_pooled
 
@@ -3960,7 +3959,7 @@ def label_trex_identities(input_tracks,
     id_mask = np.ones(len(pooled_tracks)) * np.nan
     for i, obj in enumerate(settings_db['track_include']):
         p = Polygon(obj, facecolor='k', alpha=0.1)
-        poly = mplPath.Path(obj)
+        poly = Path.Path(obj)
         index = [
             poly.contains_point(point)
             for point in zip(pooled_tracks[:, 1], pooled_tracks[:, 2])
@@ -3984,7 +3983,7 @@ def label_trex_identities(input_tracks,
         for i, obj in enumerate(settings_db['track_include']):
             plt.scatter(obj[:, 0], obj[:, 1], s=0.5, c='k')
             p = Polygon(obj, facecolor='k', alpha=0.05)
-            poly = mplPath.Path(obj)
+            poly = Path.Path(obj)
             ax.add_patch(p)
             index = [
                 poly.contains_point(point)
@@ -4022,5 +4021,28 @@ def label_trex_identities(input_tracks,
                 len(labeled_df['CORRECTED_ID']), 2), '%')
 
     out = pd.DataFrame(labeled_tracks)
-    out.columns = ['FRAME', 'X', 'Y', 'ANGLE', 'TREX_ID', 'CORRECTED_ID']
+    out.columns = [
+        'FRAME', 'X', 'Y', 'ANGLE', 'SPEED', 'TREX_ID', 'CORRECTED_ID'
+    ]
     return out
+
+
+def get_trusted_block_speed(labeled_df):
+    ''' calculate speed from trex.run output and tracks corrected using label_trex_identities().
+    Speed is calculated internally by trex.run but then recalculated to only be applied to valid,
+    consecutive frames for each individual. Returns dictionary containing ID as key and mean speed as entry.'''
+    mean_speeds = {}
+    for i in np.unique(labeled_df['CORRECTED_ID']):
+        if np.isfinite(i) == False:
+            continue
+        mean_speed = []
+        frame_blocks = consecutive(
+            labeled_df[labeled_df['CORRECTED_ID'] == i]['FRAME'].to_numpy())
+        for frame_block in frame_blocks:
+            m_speed = np.nanmean(
+                labeled_df[labeled_df['CORRECTED_ID'] == i][np.isin(
+                    labeled_df[labeled_df['CORRECTED_ID'] == i]['FRAME'],
+                    frame_block)]['SPEED'])
+            mean_speed = np.append(mean_speed, m_speed)
+        mean_speeds[str(i)] = np.nanmean(mean_speed)
+    return mean_speeds
