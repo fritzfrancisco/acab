@@ -3955,11 +3955,13 @@ def label_trex_identities(input_tracks,
     settings_db = read_settings(settings_file, centered_blobs=True)
     if from_pooled == False:
         pooled_tracks = pool_trex_tracks(input_tracks)
+    else:
+        pooled_tracks = input_tracks
 
     id_mask = np.ones(len(pooled_tracks)) * np.nan
     for i, obj in enumerate(settings_db['track_include']):
         p = Polygon(obj, facecolor='k', alpha=0.1)
-        poly = Path.Path(obj)
+        poly = mplPath.Path(obj)
         index = [
             poly.contains_point(point)
             for point in zip(pooled_tracks[:, 1], pooled_tracks[:, 2])
@@ -3983,7 +3985,7 @@ def label_trex_identities(input_tracks,
         for i, obj in enumerate(settings_db['track_include']):
             plt.scatter(obj[:, 0], obj[:, 1], s=0.5, c='k')
             p = Polygon(obj, facecolor='k', alpha=0.05)
-            poly = Path.Path(obj)
+            poly = mplPath.Path(obj)
             ax.add_patch(p)
             index = [
                 poly.contains_point(point)
@@ -4025,7 +4027,6 @@ def label_trex_identities(input_tracks,
         'FRAME', 'X', 'Y', 'ANGLE', 'SPEED', 'TREX_ID', 'CORRECTED_ID'
     ]
     return out
-
 
 def get_trusted_block_speed(labeled_df):
     ''' calculate speed from trex.run output and tracks corrected using label_trex_identities().
