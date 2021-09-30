@@ -3835,7 +3835,7 @@ def get_cmap(n, name='hsv'):
 
 def pool_trex_tracks(individual_track_files):
     '''Pool individual tracks (trex.run output) by combining all input files into a single output.
-    Output is sorted by frame number and the column names are ['FRAME','X','Y','ANGLE'] '''
+    Output is sorted by frame number and the column names are ['FRAME','X','Y','ANGLE','ID'] '''
     frames = []
     tracks = []
     count = 0
