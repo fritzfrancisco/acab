@@ -4047,3 +4047,63 @@ def get_trusted_block_speed(labeled_df):
             mean_speed = np.append(mean_speed, m_speed)
         mean_speeds[str(i)] = np.nanmean(mean_speed)
     return mean_speeds
+
+def get_cylinder_bool(input_file,
+                    distance_threshold_to_roi = 0.08,
+                    px2m = 76/0.14,
+                    interpolate=False):
+    '''Function to retrieve instances where cylinder is present (1) or not (0) per individual and recording.
+    In this case it is specifically designed for .h5 input retrieved through track2h5()
+    which contains cylinder coordinates and radii. 
+    These were collected using the find_cylinder() function.'''
+
+    cylinder = {}
+    f = h5py.File(input_file, 'r')
+    keys = np.array(list(f.keys()))
+    name = input_file.replace('.h5', '')
+
+    for key in keys:
+        for i in np.unique(f[key][:, 3]):
+            cylinder[str(int(i))] = {}
+    f.close()
+    identities = np.unique(np.array(list(cylinder.keys())))
+
+    for j, key in enumerate(keys):
+        print(os.path.basename(name), np.round((j / len(keys)) * 100, 1), '%')
+        tracks = dictfromh5(input_file, j)
+
+         ## make sure trajectories for both IDs exists:
+        if (len(tracks.keys()) != 2) or (np.array([tracks[str(i)]['cylinder_x'] for i in tracks]).any() == -1):
+            continue
+
+        for i in identities:
+
+            id_tracks = tracks[str(int(i))]
+            id_tracks = simple_filter(id_tracks, threshold=4)
+            id_tracks = rmv_out_pts(id_tracks)
+
+            x = id_tracks['pos_x']
+            y = id_tracks['pos_y']
+            cx = id_tracks['cylinder_x']
+            cy = id_tracks['cylinder_y']
+            cr = id_tracks['cylinder_r']
+            frames = id_tracks['frame']
+
+            if interpolate == True:
+                x, _ = interpolate_signal(id_tracks['pos_x'],
+                            id_tracks['frame'])
+                y, id_frame_idx = interpolate_signal(id_tracks['pos_y'],
+                            id_tracks['frame'])
+                frames = id_frame_idx
+            
+            if cr.any() < 0:
+                continue
+            else:
+                if cr > 0:
+                    c = 1
+                else:
+                    c = 0
+                cylinder[str(int(i))][key] = {
+                    'cylinder': c,
+                }
+    return cylinder
