@@ -4107,3 +4107,74 @@ def get_cylinder_bool(input_file,
                     'cylinder': c,
                 }
     return cylinder
+
+def combined_cylinder_bool(h5_lists, run_list=None,
+                         distance_threshold_to_roi=None, 
+                         fps=None,
+                         px2m=None):
+    gc.collect()
+    cylinders = []
+    for r, h5_files in enumerate(h5_lists):
+        run = []
+        for file in h5_files:
+            run = np.append(run, os.path.basename(file)[6:8].replace('_',''))
+        r = int(np.unique(run))
+
+        with Pool(len(h5_files[:1])) as p:
+            a = p.map(partial(get_cylinder_bool, 
+                              distance_threshold_to_roi=distance_threshold_to_roi,
+                              px2m=px2m,
+                              interpolate=True),
+                      h5_files[:1])
+        p.close()
+        
+        test_instances = []
+        all_days = []
+        
+        for tank in a:
+            for individual in tank.keys():
+                    data = tank[individual]
+                    days = np.unique(np.array([t[t.find('-')-4:t.find('-')+6] for t in data]))
+                    test_instances.append(np.array(sorted(data.keys())))
+                    all_days.append(days)
+        test_instances = np.unique(np.concatenate(test_instances))
+        test_instances = np.array([i[2:17] for i in test_instances])
+        all_days = np.array([i[:10] for i in test_instances])
+        unique_days = np.unique(np.array([i[:10] for i in test_instances]))
+
+        for tank in a:
+            for individual in tank.keys():
+                data = tank[individual]
+                prev = None
+                days = np.unique(np.array([t[t.find('-')-4:t.find('-')+6] for t in data]))
+                t = 0
+                test_counter = np.zeros(len(unique_days))
+                tests = np.array([i[2:17] for i in list(sorted(data.keys()))])
+                test_times = np.array([i[11:] for i in tests])
+                test_hours = np.array([i[11:13] for i in tests]).astype(int)
+                norm_test_hours = test_hours-np.nanmin(test_hours)
+                test_minutes = np.array([i[13:] for i in tests]).astype(int)
+                
+                for i, test in enumerate(sorted(data.keys())):
+                    c = data[test]['cylinder']
+               
+                    ## create test number
+                    day = test[2:17][:10]
+                    t = int(np.where(unique_days == day)[0])
+                    j = int(test[2:17][11:13]) - np.nanmin(test_hours)
+                    test_counter[t] += 1
+     
+                    ## create treatment indicator
+                    if np.isin(int(individual),trained_lists[run_list.index(r)]):
+                        trained = 1
+                    else:
+                        trained = 0
+
+                    out = np.array([r, t, j, individual, trained, float(c)])
+
+                    cylinders = np.append(cylinders, out)
+        cylinders = cylinders.reshape(-1, len(out)).astype(float)
+    del out, day, t, c, data
+    return cylinders
+
+
