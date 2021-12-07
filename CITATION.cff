@@ -3,6 +3,7 @@ message: "If you use this software, please cite it as below."
 authors:
   - family-names: Francisco, Klamser
     given-names: Fritz, Pascal
+    url: https://github.com/fritzfrancisco/acab
     orcid: https://orcid.org/0000-0002-8258-2221 
 title: "Analysis of Collective Animal Behaviour"
 version: 0.0.1
