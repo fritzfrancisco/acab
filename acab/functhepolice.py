@@ -4178,3 +4178,108 @@ def combined_cylinder_bool(h5_lists, run_list=None,
     return cylinders
 
 
+def get_angle(p1, p2):
+    '''Get the angle of this line with the horizontal axis.'''
+    dx = p2[0] - p1[0]
+    dy = p2[1] - p1[1]
+    theta = np.arctan2(dy, dx)
+    angle = np.degrees(theta)  # angle is in (-180, 180]
+    if angle < 0:
+        angle = 360 + angle
+    return angle
+
+
+def findAruco(video,
+              output_dir='.',
+              show=True,
+              start_frame=0,
+              tagDictionary=cv2.aruco.DICT_4X4_50):
+    '''Function to find aruco codes in video and save example image.
+    Image is saved on keypress (ESC) to output dir or automatically when
+    show==False'''
+    arucoDict = cv2.aruco.Dictionary_get(tagDictionary)
+    arucoParams = cv2.aruco.DetectorParameters_create()
+    
+    # create window to show video in
+    if show==True:
+        cv2.namedWindow('frame',cv2.WINDOW_NORMAL)
+
+    cap = cv2.VideoCapture(video)
+    ret,frame = cap.read()
+    frame_idx = 0 + start_frame
+    cap.set(cv2.CAP_PROP_POS_FRAMES, int(frame_idx))
+
+    # begin capturing frames
+    while(True):
+        if ret == True:
+            out = frame.copy()
+            frame = cv2.cvtColor(frame,cv2.COLOR_BGR2GRAY)
+            (markerCorners, markerIds, rejected) = cv2.aruco.detectMarkers(frame, arucoDict, parameters=arucoParams)
+
+            for marker in markerCorners:          
+                c = np.array([int((marker[0][0,0] + marker[0][1,0])/2),
+                              int((marker[0][0,1] + marker[0][1,1])/2)])
+
+                angle = get_angle((int(np.mean(marker[0][:,0])),int(np.mean(marker[0][:,1]))),
+                                  (c[0],c[1]))
+
+                x2 = int(int(np.mean(marker[0][:,0])) + 100 * np.cos(np.radians(angle)))
+                y2 = int(int(np.mean(marker[0][:,1])) + 100 * np.sin(np.radians(angle)))
+
+                xcontrol = int(int(np.mean(marker[0][:,0])) + 100 * np.cos(np.radians(90)))
+                ycontrol = int(int(np.mean(marker[0][:,1])) + 100 * np.sin(np.radians(90)))
+
+                ## plot orientation angle as line
+                out = cv2.line(out,(int(np.mean(marker[0][:,0])),int(np.mean(marker[0][:,1]))), (x2,y2),(255,255,0), 5)
+
+                ## plot reference line with known angle
+                #out = cv2.line(out,(int(np.mean(marker[0][:,0])),int(np.mean(marker[0][:,1]))),(xcontrol,ycontrol),(0,255,0), 5)
+
+                ## print tag angle
+                out = cv2.putText(out, str(str(np.round(angle-180,2))),
+                      (int(np.mean(marker[0][:,0])) + 65 ,int(np.mean(marker[0][:,1])) + 65),
+                      cv2.FONT_HERSHEY_SIMPLEX, 1.5, (255,255,255), 2, cv2.LINE_AA)
+
+                ## print tag coordinates
+                out = cv2.putText(out, str("(" + str(int(np.mean(marker[0][:,0]))) + "," + str(int(np.mean(marker[0][:,1]))) + ")"),
+                      (int(np.mean(marker[0][:,0])) + 10 ,int(np.mean(marker[0][:,1])) + 120),
+                      cv2.FONT_HERSHEY_SIMPLEX, 1.5, (255,255,255), 2, cv2.LINE_AA)
+
+            ## print crosshair in center of image
+            out = cv2.line(out,(int(frame.shape[0]/2) - 80,int(frame.shape[1]/2)),
+                           (int(frame.shape[0]/2) + 80, int(frame.shape[1]/2)),(0,75,255),2)
+            out = cv2.line(out,(int(frame.shape[0]/2),int(frame.shape[1]/2)- 80),
+                           (int(frame.shape[0]/2), int(frame.shape[1]/2) + 80),(0,75,255),2)
+
+            ## print reference zero
+            out = cv2.circle(out,(0,0),120,(0,75,255),-1)
+            out = cv2.putText(out, str("(0,0)"),
+                                  (0 + 8 ,0 + 55),
+                                  cv2.FONT_HERSHEY_SIMPLEX, 1.1, (255,255,255), 2, cv2.LINE_AA)
+
+            ## draw detected aruco markers
+            cv2.aruco.drawDetectedMarkers(out, markerCorners, markerIds)
+            
+            if show==True:
+                cv2.imshow('frame',out)
+                k = cv2.waitKey(1) & 0xFF
+                if k == 27:
+                    prefix = video.split('/')[-2]
+                    name = str(output_dir + prefix + str("_frame%d.jpg"%frame_idx))
+                    cv2.imwrite(name, out)     # save frame as JPEG file
+                    print(str('Save to ') + str(name)) 
+                    cv2.destroyAllWindows()
+                    break
+            else:
+                    prefix = video.split('/')[-2]
+                    name = str(output_dir + prefix + str("_frame%d.jpg"%frame_idx))
+                    cv2.imwrite(name, out)     # save frame as JPEG file
+                    print(str('Save to ') + str(name))
+                    break
+            frame_idx += 1
+            ret,frame = cap.read()
+        else:
+            break
+    cap.release()
+    cv2.destroyAllWindows()
+    return True
