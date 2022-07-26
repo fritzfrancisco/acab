@@ -4333,6 +4333,7 @@ def drawOrientedCrosshair(img, center, angle, length=70):
     img = cv2.addWeighted(img,0.8,newimg,0.2,0)
     return img
 
+
 def pool_trex_posture(individual_posture_files, aspandas=True):
     '''Pool individual posture tracks (trex.run output) by combining all input files into a single output.
     Output is sorted by frame number and the column names are ['FRAME','X','Y','ID'] '''
@@ -4353,3 +4354,33 @@ def pool_trex_posture(individual_posture_files, aspandas=True):
     if aspandas == True:
         tracks_pooled = pd.DataFrame(tracks_pooled, columns = ['FRAME', 'X', 'Y'])
     return tracks_pooled
+
+
+def read_trex_posture(input_file):
+    '''Function to create track from trex.run posture output. 
+    This uses the posture and creastes pixel based tracks'''
+    posture = np.load(input_file)
+    i = 0
+    coords = []
+    indices = []
+    for l in posture["outline_lengths"][:-1]:
+        i += l
+        indices.append(int(i))
+    points = np.split(posture["outline_points"], indices, axis=0)
+
+    outline = {}
+    for frame, point, off in zip(posture['frames'], points, posture['offset']):
+        outline[frame] = point + off
+
+    for frame in outline:
+        c = colors[0]
+
+        line = np.array(outline[frame]).astype(int)
+        pts = line.reshape(-1,1,2)
+        coords = np.append(coords, np.array([np.mean(pts[:,0,0]),np.mean(pts[:,0,1])]))
+    coords = coords.reshape(-1,2)
+    df = pd.DataFrame()
+    df['frame'] = posture['frames']
+    df['x'] = coords[:,0]
+    df['y'] = coords[:,1]
+    return dfposture
