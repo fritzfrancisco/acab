@@ -4332,3 +4332,24 @@ def drawOrientedCrosshair(img, center, angle, length=70):
         newimg = cv2.line(newimg,(x,y),(center[0],center[1]),(255, 255, 255), 2)
     img = cv2.addWeighted(img,0.8,newimg,0.2,0)
     return img
+
+def pool_trex_posture(individual_posture_files, aspandas=True):
+    '''Pool individual posture tracks (trex.run output) by combining all input files into a single output.
+    Output is sorted by frame number and the column names are ['FRAME','X','Y','ID'] '''
+    frames = []
+    tracks = []
+    count = 0
+    for i, track in enumerate(individual_posture_files):
+        data = read_trex_posture(track)
+
+        tracks.append(np.c_[data['frame'], data['x'], data['y'],
+                            np.repeat(i, len(data['frame']))])
+        frames = np.append(frames, data['frame'])
+        count += 1
+        del data
+    frames = np.unique(frames)
+    tracks_pooled = np.concatenate(tracks)
+    tracks_pooled = tracks_pooled[np.argsort(tracks_pooled[:, 0])]
+    if aspandas == True:
+        tracks_pooled = pd.DataFrame(tracks_pooled, columns = ['FRAME', 'X', 'Y'])
+    return tracks_pooled
