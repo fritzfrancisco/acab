@@ -4384,3 +4384,12 @@ def read_trex_posture(input_file):
     df['x'] = coords[:,0]
     df['y'] = coords[:,1]
     return dfposture
+
+def rotatePoint(centerPoint,point,angle):
+    """Rotates a point around another centerPoint. Angle is in degrees.
+    Rotation is counter-clockwise"""
+    angle = np.deg2rad(angle)
+    temp_point = point[0]-centerPoint[0] , point[1]-centerPoint[1]
+    temp_point = ( temp_point[0]*np.cos(angle)-temp_point[1]*np.sin(angle) , temp_point[0]*np.sin(angle)+temp_point[1]*np.cos(angle))
+    temp_point = temp_point[0]+centerPoint[0] , temp_point[1]+centerPoint[1]
+    return temp_point
